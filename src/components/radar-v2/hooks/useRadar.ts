@@ -66,14 +66,14 @@ export function useRadar() {
       return { hasPdf: false, hasSite: false, hasTarget: false };
     }
 
-    const agencyDNA = projectData.find((d) => d.data_type === "agencyDNA")
+    const agencyDNA = projectData.find((d) => d.data_type === "agency_dna")
       ?.data as Record<string, any> | undefined;
     const targetDef = projectData.find((d) =>
       d.data_type === "target_definition"
     )?.data as Record<string, any> | undefined;
 
     return {
-      hasPdf: !!agencyDNA?.extractedContent?.websiteContent,
+      hasPdf: !!(agencyDNA?.extractedContent),
       hasSite: !!agencyDNA?.websiteUrl,
       hasTarget:
         !!(targetDef || agencyDNA?.trackRecord?.dreamClients?.length > 0),
@@ -261,17 +261,13 @@ export function useRadar() {
       const elapsed = Date.now() - startTime;
 
       setScanProgress((prev) => {
-        // Phase 1: Strategy (0-2s) - Fast jump to 20%
-        if (elapsed < 2000) {
-          setScanStep("analyzing"); // "Stratégie"
-          return Math.min(20, (elapsed / 2000) * 20);
-        } // Phase 2: Web Search (2s-20s) - Slow climb to 70%
-        else if (elapsed < 20000) {
-          setScanStep("searching"); // "Recherche web"
-          // (elapsed - 2000) / 18000 * 50 + 20
-          return Math.min(70, 20 + ((elapsed - 2000) / 18000) * 50);
-        } // Phase 3: Analysis (20s+) - Hold at 85%
-        else {
+        if (elapsed < 3000) {
+          setScanStep("analyzing");
+          return Math.min(15, (elapsed / 3000) * 15); // 0 à 15% en 3s (Analyse)
+        } else if (elapsed < 25000) {
+          setScanStep("searching");
+          return Math.min(75, 15 + ((elapsed - 3000) / 22000) * 60); // 15 à 75% (Recherche)
+        } else {
           setScanStep("validating"); // "Analyse IA"
           return Math.min(85, prev + 0.1);
         }
@@ -355,16 +351,6 @@ export function useRadar() {
             return;
           }
 
-          if (data?.error?.includes("Context Missing")) {
-            setScanStep("idle"); // Reset UI, don't show error state
-            toast({
-              title: "Cerveau Agence vide 🧠",
-              description:
-                'Veuillez remplir votre Pitch et Cible dans "Cerveau Agence" pour que l\'IA puisse travailler.',
-              duration: 5000,
-            });
-            return; // Stop here
-          }
           throw new Error(data?.error || "Erreur inconnue");
         }
 
