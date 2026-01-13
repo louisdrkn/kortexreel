@@ -141,6 +141,8 @@ Deno.serve(async (req) => {
     // Use stable version alias
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-pro",
+      // @ts-ignore: Force API version to v1 as requested
+      apiVersion: "v1",
       generationConfig: {
         responseMimeType: "application/json",
         temperature: 0.3,
