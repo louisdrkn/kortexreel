@@ -140,21 +140,52 @@ export default function AgencyBrain() {
   }, [isAutoScanning]);
 
   // Auto-Save Hook Integration with localStorage persistence
+  // FIX: Siamese Twin Bug - Use distinct v2 keys
   const [pitch, setPitch] = useLocalAutoSave({
-    storageKey: `agency_pitch_${currentProject?.id}`,
+    storageKey: `agency_pitch_v2_${currentProject?.id}`,
     initialValue: agencyDNA.pitch || "",
     onCloudSync: async (newPitch) => {
-      await updateAgencyDNA({ pitch: newPitch }, true);
+      // FIX: Use debounced save (false) instead of immediate to prevent DB race conditions/spam
+      await updateAgencyDNA({ pitch: newPitch }, false);
     },
   });
 
   const [methodology, setMethodology] = useLocalAutoSave({
-    storageKey: `agency_methodology_${currentProject?.id}`,
+    storageKey: `agency_methodology_v2_${currentProject?.id}`,
     initialValue: agencyDNA.methodology || "",
     onCloudSync: async (newMethod) => {
-      await updateAgencyDNA({ methodology: newMethod }, true);
+      await updateAgencyDNA({ methodology: newMethod }, false);
     },
   });
+
+  // SYNC-ON-LOAD: Ensure what the user sees (Local) is what the Engine gets (DB)
+  useEffect(() => {
+    if (currentProject?.id) {
+      let hasUpdates = false;
+      const updates: any = {};
+
+      // Check Pitch
+      if (pitch && pitch !== agencyDNA.pitch) {
+        console.log("[AgencyBrain] 🔄 Syncing local Pitch to Database...");
+        updates.pitch = pitch;
+        hasUpdates = true;
+      }
+
+      // Check Methodology
+      if (methodology && methodology !== agencyDNA.methodology) {
+        console.log(
+          "[AgencyBrain] 🔄 Syncing local Methodology to Database...",
+        );
+        updates.methodology = methodology;
+        hasUpdates = true;
+      }
+
+      if (hasUpdates) {
+        // Trigger save (immediate to ensure consistency before navigation)
+        updateAgencyDNA(updates, true);
+      }
+    }
+  }, [pitch, methodology, agencyDNA, currentProject?.id, updateAgencyDNA]);
 
   // Track record state
   const [newPastClient, setNewPastClient] = useState({
@@ -733,9 +764,13 @@ export default function AgencyBrain() {
       if (pitchResult) {
         if (pitchResult.pitch) {
           updates.pitch = pitchResult.pitch;
+          // FIX: Auto-Fill UI immediately
+          setPitch(pitchResult.pitch);
         }
         if (pitchResult.methodology) {
           updates.methodology = pitchResult.methodology;
+          // FIX: Auto-Fill UI immediately
+          setMethodology(pitchResult.methodology);
         }
       } // Fallback: If specialized pitch failed but strategy/Firecrawl exists
       else {
@@ -1268,22 +1303,19 @@ export default function AgencyBrain() {
             <div className="space-y-2">
               <Label>Pitch / Proposition de valeur</Label>
               <Textarea
-                placeholder="Comment délivrez-vous vos résultats ? (ex: Sprint de 30 jours, Audit initial...)"
-                className="min-h-[150px] resize-none border-border/50 focus:border-violet-500 transition-all font-light"
-                value={methodology}
-                onChange={(e) => setMethodology(e.target.value)}
+                placeholder="Ex: Nous aidons les E-commerçants à doubler leur CA..."
+                className="min-h-[100px] resize-none border-border/50 focus:border-violet-500 transition-all font-light"
+                value={pitch} // <-- Variable UNIQUE Pitch
+                onChange={(e) => setPitch(e.target.value)}
               />
             </div>
             <div className="space-y-2">
               <Label>Méthodologie / Process signature</Label>
               <Textarea
-                placeholder="Comment travaillez-vous ? Quelle est votre approche unique ?"
-                value={agencyDNA.methodology || ""}
-                onChange={(e) =>
-                  updateAgencyDNA({
-                    methodology: e.target.value,
-                  })}
-                className="min-h-[120px]"
+                placeholder="Ex: Audit 360 -> Stratégie -> Implémentation..."
+                value={methodology} // <-- Variable UNIQUE Methodo
+                onChange={(e) => setMethodology(e.target.value)}
+                className="min-h-[100px]"
               />
             </div>
           </CardContent>

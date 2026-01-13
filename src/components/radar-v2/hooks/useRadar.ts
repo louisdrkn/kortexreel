@@ -18,8 +18,11 @@ interface ProjectContext {
   hasTarget: boolean;
 }
 
+import { usePOD } from "@/contexts/PODContext";
+
 export function useRadar() {
   const { currentProject } = useProject();
+  const { saveAgencyDNA, saveTargetCriteria } = usePOD();
   const { toast } = useToast();
   const { session, ensureSession } = useAuth();
   const queryClient = useQueryClient();
@@ -285,6 +288,12 @@ export function useRadar() {
 
         setScanStep("analyzing");
         setScanProgress(30);
+
+        // 0. RELAXED: We trust the AI to figure it out or the backend to handle defaults.
+        console.log(
+          "[Radar] Starting scan with context (Pre-flight check removed):",
+          projectContext,
+        );
 
         // DEEP REASONING CALL
         const { data, error } = await supabase.functions.invoke(

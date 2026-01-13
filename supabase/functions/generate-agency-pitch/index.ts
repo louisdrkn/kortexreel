@@ -42,27 +42,17 @@ Deno.serve(async (req) => {
     );
 
     const prompt = `
-    Agis comme un Consultant en Stratégie Senior.
-    Lis intégralement les documents suivants (PDFs, Offres, Brand Book de l'agence) et le contenu du site web:
-    
-    "${fullContext.slice(0, 300000)}"
+    ANALYSE CE SITE D'AGENCE : ${websiteContent || "URL non fournie"}
+    CONTENU DU SITE : ${fullContext.substring(0, 10000)}
 
     TA MISSION :
-    Rédige deux paragraphes parfaits pour le 'Contexte Additionnel' de l'agence.
-    Le ton doit être professionnel, persuasif et fidèle aux documents sources.
+    Extrais l'ADN de cette agence pour remplir son cerveau commercial.
 
-    1. Paragraphe 1 (Pitch) : 
-    Une proposition de valeur percutante qui explique le 'Pourquoi nous' (USP). 
-    Doit donner envie de signer tout de suite.
-
-    2. Paragraphe 2 (Méthodologie) : 
-    Une explication claire et rassurante de l'approche unique de l'agence. 
-    Comment ils délivrent le résultat.
-
-    FORMAT DE SORTIE JSON STRICT :
+    FORMAT JSON STRICT ATTENDU :
     {
-      "pitch": "Le texte du pitch ici...",
-      "methodology": "Le texte de la méthodologie ici..."
+      "pitch": "Une phrase percutante qui résume leur proposition de valeur unique (pour qui ? quel résultat ?)",
+      "methodology": "Leur façon de travailler, leurs étapes clés ou leur 'secret sauce' (résumé en 2-3 phrases)",
+      "track_record": [] 
     }
     `;
 
