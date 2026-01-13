@@ -280,6 +280,7 @@ export function useRadar() {
   // Scan market using the new 4-phase discovery engine
   const scanMarket = useCallback(
     async (options?: { forceRefresh?: boolean; strategy?: string }) => {
+      /* OPEN CIRCUIT MODE: Project check disabled
       if (!currentProject?.id) {
         toast({
           title: "Projet requis",
@@ -289,6 +290,7 @@ export function useRadar() {
         });
         return;
       }
+      */
 
       if (scanChannelRef.current) {
         supabase.removeChannel(scanChannelRef.current);
@@ -303,14 +305,13 @@ export function useRadar() {
       try {
         // Self-healing session retrieval
         let currentSession = session;
-        if (!currentSession) {
-          currentSession = await ensureSession();
-        }
+        /* OPEN CIRCUIT MODE: Session check disabled
         if (!currentSession) {
           toast({ title: "Session expirée", description: "Rechargement…" });
           window.location.reload();
           return;
         }
+        */
 
         // 0. RELAXED: We trust the AI to figure it out or the backend to handle defaults.
         console.log(

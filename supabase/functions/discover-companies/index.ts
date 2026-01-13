@@ -56,55 +56,39 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to fetch project data: ${projectError.message}`);
     }
 
+    // OPEN CIRCUIT MODE: Removed blocking check for missing projectData
     if (!projectData || projectData.length === 0) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error:
-            "Project data not found. Please configure Agency Brain with your pitch and target.",
-          code: "CONTEXT_MISSING",
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+      console.warn("[DISCOVER] Project data not found, using defaults.");
     }
 
-    const agencyDNA = projectData.find((d) => d.data_type === "agency_dna")
-      ?.data;
-    const targetDef = projectData.find((d) =>
+    const agencyDNA = projectData?.find((d) => d.data_type === "agency_dna")
+      ?.data || {};
+    const targetDef = projectData?.find((d) =>
       d.data_type === "target_definition"
-    )?.data;
+    )?.data || {};
 
     // Validate required fields
     // Validate required fields
     // RELAXED: Pitch can be inferred by the AI "Expert Kortex" if missing.
     // We only block if we have absolutely nothing to work with (no target).
 
+    // OPEN CIRCUIT MODE: Removed blocking check for targetDef.targetDescription
     if (!targetDef?.targetDescription) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error:
-            "Missing Target Definition. Please describe your ideal customer in Agency Brain.",
-          code: "CONTEXT_MISSING",
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+      console.warn("[DISCOVER] Missing Target Definition, using wildcards.");
     }
 
     console.log("[DISCOVER] ✅ Project context loaded:", {
-      pitch: agencyDNA.pitch.substring(0, 50) + "...",
-      target: targetDef.targetDescription.substring(0, 50) + "...",
+      pitch: (agencyDNA.pitch || "Default Pitch").substring(0, 50) + "...",
+      target:
+        (targetDef.targetDescription || "Default Target").substring(0, 50) +
+        "...",
     });
 
     // --- 1. CACHE VERIFICATION (FIXED) ---
     // Create signature from project + target (not from non-existent inputClient)
-    const targetQuery = targetDef.targetDescription.toLowerCase().trim();
+    const targetQuery =
+      (targetDef.targetDescription || "generic company search").toLowerCase()
+        .trim();
     const signature = `${projectId}_${targetQuery.substring(0, 100)}`;
 
     if (signature && !force_refresh) {
@@ -135,7 +119,19 @@ Deno.serve(async (req) => {
     }
 
     // --- 2. AI CONFIGURATION (LOCKED ON 1.5 PRO) ---
-    const genAI = new GoogleGenerativeAI(Deno.env.get("GOOGLE_API_KEY") || "");
+    console.log(
+      "DEBUG: GOOGLE_API_KEY present:",
+      !!Deno.env.get("GOOGLE_API_KEY"),
+    );
+    console.log(
+      "DEBUG: GEMINI_API_KEY present:",
+      !!Deno.env.get("GEMINI_API_KEY"),
+    );
+
+    // Fallback to GEMINI_API_KEY if GOOGLE_API_KEY is missing, just in case
+    const apiKey = Deno.env.get("GOOGLE_API_KEY") ||
+      Deno.env.get("GEMINI_API_KEY") || "";
+    const genAI = new GoogleGenerativeAI(apiKey);
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
 
     if (!firecrawlKey) {

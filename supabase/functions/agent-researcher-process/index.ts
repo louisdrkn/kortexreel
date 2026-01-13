@@ -62,8 +62,6 @@ interface ResearchJobUpdate {
   completed_at?: string;
 }
 
-declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
-
 const FIRECRAWL_API_URL = "https://api.firecrawl.dev/v1";
 
 // --- HELPERS ---
