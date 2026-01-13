@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
       // @ts-ignore: Force API version to v1 as requested
       apiVersion: "v1",
       generationConfig: {
-        responseMimeType: "application/json",
+        // responseMimeType removed for v1 compatibility
         temperature: 0.3,
       },
     });
@@ -195,7 +195,45 @@ Deno.serve(async (req) => {
     STRICT JSON OUTPUT: { "firecrawl_missions": ["Query 1", "Query 2", "Query 3", "Query 4"] }
     `;
 
-    const strategyResult = await model.generateContent(strategyPrompt);
+    // --- MANUAL FETCH BYPASS (SDK DIAGNOSIS) ---
+    console.log("⚡️ DIAGNOSIS: Attempting direct fetch to v1 API...");
+    const apiUrl =
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: strategyPrompt }] }],
+        generationConfig: {
+          // responseMimeType removed for v1 compatibility
+          temperature: 0.3,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(
+        "❌ MANUAL FETCH FAILED:",
+        response.status,
+        response.statusText,
+        errorText,
+      );
+      throw new Error(`Manual Fetch Failed: ${response.status} ${errorText}`);
+    }
+
+    const manualData = await response.json();
+    console.log("✅ MANUAL FETCH SUCCESS!");
+
+    // Adapt response to match SDK structure for repairJson
+    const strategyResult = {
+      response: {
+        text: () =>
+          manualData.candidates?.[0]?.content?.parts?.[0]?.text || "{}",
+      },
+    };
+
     // FIX: JSON Crash Risk - Use repairJson
     const strategyJson = repairJson<{ firecrawl_missions: string[] }>(
       strategyResult.response.text(),

@@ -18,6 +18,23 @@ import {
 } from "../_shared/api-clients.ts";
 import { buildProjectContext } from "../_shared/project-context.ts";
 
+interface SerperResult {
+  title: string;
+  link: string;
+  snippet: string;
+  date?: string;
+  source?: string;
+  imageUrl?: string;
+  position?: number;
+}
+
+interface SerperResponse {
+  organic: SerperResult[];
+  searchParameters: any;
+  peopleAlsoAsk?: any[];
+  relatedSearches?: any[];
+}
+
 async function phase1AnalyseIntention(
   geminiClient: GeminiClient,
   projectContext: string,
