@@ -1,36 +1,36 @@
-import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  Radar,
-  FileText,
-  Globe,
-  Target,
-  Sparkles,
-  Loader2,
-  Filter,
-  ChevronDown,
   CheckCircle2,
-  Moon
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+  ChevronDown,
+  FileText,
+  Filter,
+  Globe,
+  Loader2,
+  Moon,
+  Radar,
+  Sparkles,
+  Target,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@/components/ui/popover';
-import { Slider } from '@/components/ui/slider';
-import { Label } from '@/components/ui/label';
-import { CompanyGrid } from './CompanyGrid';
-import { CompanyDetailSheet } from './CompanyDetailSheet';
-import { RecalibrateButton } from './RecalibrateButton';
-import { useRadar } from './hooks/useRadar';
-import { useNeuralLoop } from './hooks/useNeuralLoop';
-import { useRecalibration } from './hooks/useRecalibration';
-import { NeuralFeedbackBar } from './NeuralFeedbackBar';
-import { useAuth } from '@/contexts/AuthContext';
-import { cn } from '@/lib/utils';
-import { Company } from './types';
+} from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { CompanyGrid } from "./CompanyGrid";
+import { CompanyDetailSheet } from "./CompanyDetailSheet";
+import { RecalibrateButton } from "./RecalibrateButton";
+import { useRadar } from "./hooks/useRadar";
+import { useNeuralLoop } from "./hooks/useNeuralLoop";
+import { useRecalibration } from "./hooks/useRecalibration";
+import { NeuralFeedbackBar } from "./NeuralFeedbackBar";
+import { useAuth } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
+import { Company } from "./types";
 
 export function RadarLayout() {
   const {
@@ -59,10 +59,12 @@ export function RadarLayout() {
   const userId = session?.user?.id;
 
   // Neural Loop integration
-  const { excludeCompany, validateCompany, feedback, clearFeedback } = useNeuralLoop(projectId, userId);
+  const { excludeCompany, validateCompany, feedback, clearFeedback } =
+    useNeuralLoop(projectId, userId);
 
   // Recalibration integration
-  const { recalibrate, trackInteraction, isRecalibrating, currentStep } = useRecalibration(projectId, userId);
+  const { recalibrate, trackInteraction, isRecalibrating, currentStep } =
+    useRecalibration(projectId, userId);
 
   const [minScore, setMinScore] = useState(0);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
@@ -72,15 +74,21 @@ export function RadarLayout() {
   const [newlyAddedIds, setNewlyAddedIds] = useState<Set<string>>(new Set());
 
   // Filter companies locally - exclude archived/excluded
-  const filteredCompanies = companies.filter(c => {
-    if (c.analysisStatus === 'archived' || c.analysisStatus === 'excluded') return false;
+  const filteredCompanies = companies.filter((c) => {
+    if (c.analysisStatus === "archived" || c.analysisStatus === "excluded") {
+      return false;
+    }
     if (minScore > 0 && (c.score || 0) < minScore) return false;
-    if (statusFilter.length > 0 && !statusFilter.includes(c.status)) return false;
+    if (statusFilter.length > 0 && !statusFilter.includes(c.status)) {
+      return false;
+    }
     return true;
   });
 
   // Count buffer companies (discovered overnight)
-  const bufferCompanies = companies.filter(c => c.analysisStatus === 'buffer');
+  const bufferCompanies = companies.filter((c) =>
+    c.analysisStatus === "buffer"
+  );
 
   const handleInitScan = () => {
     scanMarket();
@@ -96,7 +104,7 @@ export function RadarLayout() {
   const handleExcludeCompany = async (company: Company) => {
     // Track rejection
     if (company.id) {
-      await trackInteraction(company.id, 'rejected');
+      await trackInteraction(company.id, "rejected");
     }
     const result = await excludeCompany(company);
     if (result) {
@@ -108,7 +116,7 @@ export function RadarLayout() {
   const handleValidateCompany = async (company: Company) => {
     // Track validation
     if (company.id) {
-      await trackInteraction(company.id, 'validated');
+      await trackInteraction(company.id, "validated");
     }
     const result = await validateCompany(company);
     if (result) {
@@ -120,7 +128,7 @@ export function RadarLayout() {
   const handleOpenCompanySheet = (company: Company) => {
     viewStartTime.current = Date.now();
     if (company.id) {
-      trackInteraction(company.id, 'viewed');
+      trackInteraction(company.id, "viewed");
     }
     openCompanySheet(company);
   };
@@ -131,7 +139,7 @@ export function RadarLayout() {
       const duration = Date.now() - viewStartTime.current;
       // Re-track with duration if significant (>5 seconds)
       if (duration > 5000) {
-        trackInteraction(selectedCompany.id, 'viewed', duration);
+        trackInteraction(selectedCompany.id, "viewed", duration);
       }
     }
     viewStartTime.current = null;
@@ -148,8 +156,8 @@ export function RadarLayout() {
       },
       async () => {
         // Trigger fresh scan after recalibration with FORCE REFRESH
-        await scanMarket({ forceRefresh: true, strategy: 'deep_deduction' });
-      }
+        await scanMarket({ forceRefresh: true, strategy: "deep_deduction" });
+      },
     );
     if (result?.success) {
       refetch();
@@ -176,6 +184,9 @@ export function RadarLayout() {
           className="max-w-7xl mx-auto"
         >
           {/* Control Pod Container */}
+          <h1 className="text-red-500 bg-yellow-200 text-center p-2 font-bold mb-2">
+            MODE V2 ACTIVÉ
+          </h1>
           <div className="bg-white rounded-2xl shadow-lg shadow-slate-200/50 border border-slate-100 p-4">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               {/* Left: Title + Project Badge */}
@@ -241,7 +252,10 @@ export function RadarLayout() {
                       <Filter className="h-4 w-4" />
                       <span className="hidden sm:inline">Filtres</span>
                       {(minScore > 0 || statusFilter.length > 0) && (
-                        <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs bg-violet-100 text-violet-700">
+                        <Badge
+                          variant="secondary"
+                          className="ml-1 px-1.5 py-0 text-xs bg-violet-100 text-violet-700"
+                        >
                           {(minScore > 0 ? 1 : 0) + statusFilter.length}
                         </Badge>
                       )}
@@ -255,7 +269,10 @@ export function RadarLayout() {
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label className="text-slate-500 text-xs uppercase tracking-wide">
-                          Score minimum: <span className="text-violet-600 font-semibold">{minScore}</span>
+                          Score minimum:{" "}
+                          <span className="text-violet-600 font-semibold">
+                            {minScore}
+                          </span>
                         </Label>
                         <Slider
                           value={[minScore]}
@@ -267,21 +284,25 @@ export function RadarLayout() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-slate-500 text-xs uppercase tracking-wide">Statut</Label>
+                        <Label className="text-slate-500 text-xs uppercase tracking-wide">
+                          Statut
+                        </Label>
                         <div className="flex flex-wrap gap-2">
                           {[
-                            { key: 'hot', label: '🔥 Hot', color: 'emerald' },
-                            { key: 'warm', label: '☀️ Warm', color: 'amber' },
-                            { key: 'cold', label: '❄️ Cold', color: 'blue' },
-                          ].map(status => (
+                            { key: "hot", label: "🔥 Hot", color: "emerald" },
+                            { key: "warm", label: "☀️ Warm", color: "amber" },
+                            { key: "cold", label: "❄️ Cold", color: "blue" },
+                          ].map((status) => (
                             <Button
                               key={status.key}
-                              variant={statusFilter.includes(status.key) ? 'default' : 'outline'}
+                              variant={statusFilter.includes(status.key)
+                                ? "default"
+                                : "outline"}
                               size="sm"
                               onClick={() => {
-                                setStatusFilter(prev =>
+                                setStatusFilter((prev) =>
                                   prev.includes(status.key)
-                                    ? prev.filter(s => s !== status.key)
+                                    ? prev.filter((s) => s !== status.key)
                                     : [...prev, status.key]
                                 );
                               }}
@@ -289,7 +310,7 @@ export function RadarLayout() {
                                 "text-xs",
                                 statusFilter.includes(status.key)
                                   ? "bg-violet-600 text-white hover:bg-violet-700"
-                                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50",
                               )}
                             >
                               {status.label}
@@ -318,12 +339,16 @@ export function RadarLayout() {
                 <motion.div
                   animate={isScanning ? {} : {
                     boxShadow: [
-                      '0 4px 20px rgba(124, 58, 237, 0.15)',
-                      '0 4px 30px rgba(124, 58, 237, 0.25)',
-                      '0 4px 20px rgba(124, 58, 237, 0.15)'
-                    ]
+                      "0 4px 20px rgba(124, 58, 237, 0.15)",
+                      "0 4px 30px rgba(124, 58, 237, 0.25)",
+                      "0 4px 20px rgba(124, 58, 237, 0.15)",
+                    ],
                   }}
-                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                  transition={{
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
                   className="rounded-lg"
                 >
                   <Button
@@ -337,20 +362,22 @@ export function RadarLayout() {
                       "text-white",
                       "shadow-lg shadow-violet-200/50",
                       "transition-all duration-200",
-                      isScanning && "opacity-80"
+                      isScanning && "opacity-80",
                     )}
                   >
-                    {isScanning ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Scan en cours...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="h-4 w-4" />
-                        Lancer la Découverte
-                      </>
-                    )}
+                    {isScanning
+                      ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Scan en cours...
+                        </>
+                      )
+                      : (
+                        <>
+                          <Sparkles className="h-4 w-4" />
+                          Lancer la Découverte
+                        </>
+                      )}
                   </Button>
                 </motion.div>
               </div>
@@ -361,7 +388,7 @@ export function RadarLayout() {
               {isScanning && (
                 <motion.div
                   initial={{ opacity: 0, height: 0, marginTop: 0 }}
-                  animate={{ opacity: 1, height: 'auto', marginTop: 16 }}
+                  animate={{ opacity: 1, height: "auto", marginTop: 16 }}
                   exit={{ opacity: 0, height: 0, marginTop: 0 }}
                   className="overflow-hidden"
                 >
@@ -370,10 +397,13 @@ export function RadarLayout() {
                       <div className="flex items-center gap-3">
                         <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
                         <span className="text-slate-600 text-sm font-medium">
-                          {scanStep === 'searching' ? 'Recherche web...' :
-                            scanStep === 'validating' ? 'Validation IA...' :
-                              scanStep === 'complete' ? 'Terminé' :
-                                'Initialisation...'}
+                          {scanStep === "searching"
+                            ? "Recherche web..."
+                            : scanStep === "validating"
+                            ? "Validation IA..."
+                            : scanStep === "complete"
+                            ? "Terminé"
+                            : "Initialisation..."}
                         </span>
                       </div>
                       <span className="text-xs text-slate-400">
@@ -390,7 +420,9 @@ export function RadarLayout() {
                       />
                     </div>
                     <div className="flex justify-end mt-2">
-                      <span className="text-xs text-slate-500 font-medium">{scanProgress}%</span>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {scanProgress}%
+                      </span>
                     </div>
                   </div>
                 </motion.div>
@@ -417,7 +449,10 @@ export function RadarLayout() {
                   Pendant votre sommeil...
                 </h3>
                 <p className="text-xs text-slate-500">
-                  J'ai trouvé {bufferCompanies.length} pépite{bufferCompanies.length > 1 ? 's' : ''} basée{bufferCompanies.length > 1 ? 's' : ''} sur vos actions d'hier
+                  J'ai trouvé {bufferCompanies.length}{" "}
+                  pépite{bufferCompanies.length > 1 ? "s" : ""}{" "}
+                  basée{bufferCompanies.length > 1 ? "s" : ""}{" "}
+                  sur vos actions d'hier
                 </p>
               </div>
             </div>
@@ -465,24 +500,24 @@ export function RadarLayout() {
 function StatusPill({
   icon: Icon,
   label,
-  active
+  active,
 }: {
   icon: React.ElementType;
   label: string;
   active: boolean;
 }) {
   return (
-    <div className={cn(
-      "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200",
-      active
-        ? "bg-emerald-50 text-emerald-700"
-        : "bg-slate-100 text-slate-400"
-    )}>
-      {active ? (
-        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-      ) : (
-        <Icon className="h-3.5 w-3.5" />
+    <div
+      className={cn(
+        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200",
+        active
+          ? "bg-emerald-50 text-emerald-700"
+          : "bg-slate-100 text-slate-400",
       )}
+    >
+      {active
+        ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+        : <Icon className="h-3.5 w-3.5" />}
       <span>{label}</span>
     </div>
   );

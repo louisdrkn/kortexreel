@@ -249,8 +249,37 @@ export function useRadar() {
   // Close company detail sheet
   const closeSheet = useCallback(() => {
     setIsSheetOpen(false);
-    setTimeout(() => setSelectedCompany(null), 300);
+    setSelectedCompany(null);
   }, []);
+
+  // Simulated Progress Logic
+  useEffect(() => {
+    if (!isScanning) return;
+
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+
+      setScanProgress((prev) => {
+        // Phase 1: Strategy (0-2s) - Fast jump to 20%
+        if (elapsed < 2000) {
+          setScanStep("analyzing"); // "Stratégie"
+          return Math.min(20, (elapsed / 2000) * 20);
+        } // Phase 2: Web Search (2s-20s) - Slow climb to 70%
+        else if (elapsed < 20000) {
+          setScanStep("searching"); // "Recherche web"
+          // (elapsed - 2000) / 18000 * 50 + 20
+          return Math.min(70, 20 + ((elapsed - 2000) / 18000) * 50);
+        } // Phase 3: Analysis (20s+) - Hold at 85%
+        else {
+          setScanStep("validating"); // "Analyse IA"
+          return Math.min(85, prev + 0.1);
+        }
+      });
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [isScanning]);
 
   // Scan market using the new 4-phase discovery engine
   const scanMarket = useCallback(
@@ -270,9 +299,10 @@ export function useRadar() {
         scanChannelRef.current = null;
       }
 
+      // RESET EVERYTHING
       setIsScanning(true);
+      setScanProgress(0);
       setScanStep("analyzing");
-      setScanProgress(10);
 
       try {
         // Self-healing session retrieval
@@ -285,9 +315,6 @@ export function useRadar() {
           window.location.reload();
           return;
         }
-
-        setScanStep("analyzing");
-        setScanProgress(30);
 
         // 0. RELAXED: We trust the AI to figure it out or the backend to handle defaults.
         console.log(
@@ -312,10 +339,12 @@ export function useRadar() {
 
         // HANDLE LOGIC ERRORS (400 Bad Request from missing context)
         if (!data?.success) {
+          setIsScanning(false);
+          setScanProgress(0); // RESET ON ERROR
+
           // DIAGNOSTIC CRASH TEST FEEDBACK
           if (data?.code === "DIAGNOSTIC_FAIL") {
             setScanStep("error");
-            setIsScanning(false);
             toast({
               title: "🚨 Échec du Diagnostic",
               description: data.error +
@@ -328,7 +357,6 @@ export function useRadar() {
 
           if (data?.error?.includes("Context Missing")) {
             setScanStep("idle"); // Reset UI, don't show error state
-            setIsScanning(false);
             toast({
               title: "Cerveau Agence vide 🧠",
               description:
@@ -339,9 +367,6 @@ export function useRadar() {
           }
           throw new Error(data?.error || "Erreur inconnue");
         }
-
-        setScanStep("validating");
-        setScanProgress(70);
 
         // Save DEDUCED companies to database
         if (data.companies && data.companies.length > 0) {
@@ -394,6 +419,7 @@ export function useRadar() {
       } catch (error) {
         console.error("[RADAR] Deep Reasoning error:", error);
         setScanStep("error");
+        setScanProgress(0); // RESET ON ERROR
         setIsScanning(false);
         toast({
           title: "Erreur de raisonnement",
