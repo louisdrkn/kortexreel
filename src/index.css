@@ -1,0 +1,278 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* War Room Design - Dense Dashboard Aesthetic */
+    --background: 220 14% 96%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary - Electric Violet */
+    --primary: 262 83% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 92%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 220 14% 92%;
+    --muted-foreground: 215 16% 47%;
+
+    /* Accent - Deep Indigo */
+    --accent: 245 75% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 86%;
+    --input: 220 13% 86%;
+    --ring: 262 83% 58%;
+
+    --radius: 0.625rem;
+
+    /* Custom tokens - War Room */
+    --surface-elevated: 0 0% 100%;
+    --surface-subtle: 220 14% 96%;
+    --surface-inset: 220 14% 94%;
+    --text-primary: 222 47% 11%;
+    --text-secondary: 215 16% 47%;
+    --text-tertiary: 215 14% 63%;
+    --border-subtle: 220 13% 88%;
+    --border-strong: 220 13% 80%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    /* Sidebar - Dark War Room */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 215 20% 65%;
+    --sidebar-primary: 262 83% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 262 50% 20%;
+    --sidebar-accent-foreground: 262 83% 85%;
+    --sidebar-border: 222 30% 18%;
+    --sidebar-ring: 262 83% 58%;
+
+    /* Cockpit Theme - Enterprise Premium */
+    --cockpit-bg: 240 6% 5%;
+    --cockpit-elevated: 240 6% 7%;
+    --cockpit-surface: 240 6% 9%;
+    --cockpit-violet: 258 90% 66%;
+    --cockpit-success: 160 84% 39%;
+    --cockpit-muted: 240 5% 46%;
+    --cockpit-border: 240 5% 12%;
+  }
+
+  .dark {
+    --background: 224 50% 6%;
+    --foreground: 210 40% 98%;
+
+    --card: 224 50% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 224 50% 8%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 238 84% 65%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 15%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 15%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 238 84% 65%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 238 84% 65%;
+
+    --surface-elevated: 224 50% 10%;
+    --surface-subtle: 224 50% 8%;
+    --surface-inset: 224 50% 6%;
+    --text-primary: 210 40% 98%;
+    --text-secondary: 215 20% 65%;
+    --text-tertiary: 215 16% 47%;
+    --border-subtle: 217 33% 20%;
+    --border-strong: 217 33% 25%;
+
+    --sidebar-background: 224 50% 8%;
+    --sidebar-foreground: 215 20% 65%;
+    --sidebar-primary: 238 84% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 238 50% 15%;
+    --sidebar-accent-foreground: 238 84% 75%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 238 84% 65%;
+
+    /* Cockpit Theme - Enterprise Premium */
+    --cockpit-bg: 240 6% 5%;
+    --cockpit-elevated: 240 6% 7%;
+    --cockpit-surface: 240 6% 9%;
+    --cockpit-violet: 258 90% 66%;
+    --cockpit-success: 160 84% 39%;
+    --cockpit-muted: 240 5% 46%;
+    --cockpit-border: 240 5% 12%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family:
+      "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight text-foreground;
+  }
+
+  h1 {
+    @apply text-2xl md:text-3xl;
+  }
+
+  h2 {
+    @apply text-xl md:text-2xl;
+  }
+
+  h3 {
+    @apply text-lg md:text-xl;
+  }
+
+  p {
+    @apply text-muted-foreground leading-relaxed;
+  }
+
+  /* Premium label styling */
+  label {
+    @apply text-sm font-medium text-foreground;
+  }
+
+  /* Small text styling */
+  small {
+    @apply text-xs text-muted-foreground;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary
+      to-accent;
+  }
+
+  .surface-elevated {
+    @apply bg-card rounded-lg border border-border shadow-md;
+  }
+
+  .surface-subtle {
+    @apply bg-muted/50 border border-border-subtle;
+  }
+
+  .surface-inset {
+    @apply bg-muted/70 rounded-md border border-border;
+  }
+
+  /* War Room Card */
+  .war-room-card {
+    @apply bg-card rounded-lg border border-border shadow-md
+      hover:shadow-elevated transition-shadow;
+  }
+
+  /* Premium label style */
+  .label-premium {
+    @apply text-xs uppercase tracking-wider font-semibold text-muted-foreground;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out;
+  }
+
+  .animate-pulse-subtle {
+    animation: pulseSoft 2s ease-in-out infinite;
+  }
+
+  /* Premium focus ring */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2
+      focus-visible:ring-primary/30 focus-visible:ring-offset-2
+      focus-visible:ring-offset-background;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseSoft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Scrollbar styling - Premium look */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-border/60 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/30;
+}
+
+/* Selection */
+::selection {
+  @apply bg-primary/20 text-primary;
+}

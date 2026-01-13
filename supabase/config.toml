@@ -1,0 +1,133 @@
+project_id = "shxwltyqvpqxtebthzsw"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://localhost"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://localhost:3000"]
+jwt_expiry = 3600
+enable_signup = true
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+
+[functions.linkedin-search-decision-makers]
+verify_jwt = true
+
+[functions.generate-proposal]
+verify_jwt = true
+
+[functions.generate-outreach]
+verify_jwt = true
+
+[functions.generate-email]
+verify_jwt = true
+
+[functions.generate-target-accounts]
+verify_jwt = true
+
+[functions.generate-target-criteria]
+verify_jwt = true
+
+[functions.analyze-prospect]
+verify_jwt = true
+
+[functions.linkedin-search]
+verify_jwt = true
+
+[functions.linkedin-profile]
+verify_jwt = true
+
+[functions.linkedin-company]
+verify_jwt = true
+
+[functions.firecrawl-scrape]
+verify_jwt = true
+
+[functions.extract-track-record]
+verify_jwt = true
+
+[functions.search-companies]
+verify_jwt = true
+
+[functions.extract-document-text]
+verify_jwt = true
+
+[functions.generate-weak-signals]
+verify_jwt = true
+
+[functions.auto-detect-targets]
+verify_jwt = true
+
+[functions.system-health-check]
+verify_jwt = true
+
+[functions.process-document]
+verify_jwt = true
+
+[functions.analyze-website]
+verify_jwt = true
+
+[functions.find-decision-maker]
+verify_jwt = true
+
+[functions.agent-researcher-process]
+verify_jwt = true
+
+[functions.connect-linkedin-account]
+verify_jwt = true
+
+[functions.analyze-company-deep]
+verify_jwt = true
+
+[functions.sync-unipile-account]
+verify_jwt = true
+
+[functions.discover-companies]
+verify_jwt = false
+
+[functions.kortex-brain]
+verify_jwt = false
+
+[functions.enrich-leads-batch]
+verify_jwt = true
+
+[functions.send-connection-request]
+verify_jwt = true
+
+[functions.sniper-decision-maker]
+verify_jwt = false
+
+[functions.recalibrate-pool]
+verify_jwt = true
+
+[functions.neural-enrich-buffer]
+verify_jwt = false
+
+[functions.enrich-prospect]
+verify_jwt = true
+
+[functions.recalibrate-radar]
+verify_jwt = true
+
+[functions.hunt-clients]
+verify_jwt = true

@@ -1,0 +1,1 @@
+export { KnowledgeVault } from './KnowledgeVault';
