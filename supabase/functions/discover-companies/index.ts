@@ -87,16 +87,47 @@ Deno.serve(async (req) => {
       d.data_type === "target_definition"
     )?.data || {};
 
+    console.log("DEBUG DNA:", {
+      agencyDNA_keys: Object.keys(agencyDNA),
+      pitch_preview: agencyDNA?.pitch
+        ? agencyDNA.pitch.substring(0, 20)
+        : "MISSING",
+      target_preview: targetDef?.targetDescription
+        ? targetDef.targetDescription.substring(0, 20)
+        : "MISSING",
+    });
+
     if (!projectData || projectData.length === 0) {
-      console.warn("[DISCOVER] Project data not found, using defaults.");
+      console.warn("[DISCOVER] Project data not found.");
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error:
+            "Données du projet introuvables. Veuillez remplir le Cerveau Agence.",
+          code: "CONTEXT_MISSING",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
-    if (!targetDef?.targetDescription) {
-      console.warn("[DISCOVER] Missing Target Definition, using wildcards.");
+
+    // OPTION B: FORCE PASS to unblock User
+    if (!agencyDNA?.pitch || agencyDNA.pitch.length < 10) {
+      console.warn(
+        "⚠️ VIOLATION: Pitch missing or too short, but forcing execution (Option B).",
+      );
+      // Fallback or just proceed - Gemini might hallucinate if empty.
+    }
+    if (
+      !targetDef?.targetDescription || targetDef.targetDescription.length < 5
+    ) {
+      console.warn(
+        "⚠️ VIOLATION: Target missing or too short, but forcing execution (Option B).",
+      );
     }
 
     // --- 1. CACHE VERIFICATION ---
     const targetQuery =
-      (targetDef.targetDescription || "generic company search").toLowerCase()
+      (targetDef?.targetDescription || "generic company search").toLowerCase()
         .trim();
     const signature = `${projectId}_${targetQuery.substring(0, 100)}`;
 
@@ -109,12 +140,33 @@ Deno.serve(async (req) => {
 
       if (cachedProspects && cachedProspects.length > 0) {
         console.log("🚀 CACHE HIT: Prospects found in database!");
+
+        // NORMALIZE CACHED DATA (Legacy Support)
+        const normalizedCompanies = cachedProspects.map((p) => {
+          const d = p.match_data;
+          return {
+            name: d.name || d.company_name || "Entreprise Inconnue",
+            website: d.website || d.url || d.company_url || "",
+            score: d.score || d.match_score || 0,
+            reasoning: d.reasoning || d.why_match || d.match_explanation ||
+              "Correspondance détectée par IA (Cache)",
+            ...d,
+          };
+        });
+
+        const responsePayload = {
+          success: true,
+          companies: normalizedCompanies,
+          cached: true,
+        };
+
+        console.log(
+          "FINAL_BACKEND_OUTPUT (CACHE):",
+          JSON.stringify(responsePayload, null, 2),
+        );
+
         return new Response(
-          JSON.stringify({
-            success: true,
-            companies: cachedProspects.map((p) => p.match_data),
-            cached: true,
-          }),
+          JSON.stringify(responsePayload),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
@@ -316,18 +368,25 @@ Deno.serve(async (req) => {
       }
     }
 
+    const responsePayload = {
+      success: true,
+      companies: mappedCompanies,
+      cached: false,
+      searchPhases: {
+        queries: missions.length,
+        urls: allUrls.length,
+        scraped: validSites.length,
+        validated: validatedCompanies.length,
+      },
+    };
+
+    console.log(
+      "FINAL_BACKEND_OUTPUT:",
+      JSON.stringify(responsePayload, null, 2),
+    );
+
     return new Response(
-      JSON.stringify({
-        success: true,
-        companies: mappedCompanies,
-        cached: false,
-        searchPhases: {
-          queries: missions.length,
-          urls: allUrls.length,
-          scraped: validSites.length,
-          validated: validatedCompanies.length,
-        },
-      }),
+      JSON.stringify(responsePayload),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error: any) {

@@ -392,16 +392,40 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       }));
 
       // Upsert to database
-      const { error } = await supabase
+      // MANUAL UPSERT WORKAROUND (Missing unique constraint on project_id, data_type)
+
+      // 1. Check if row exists
+      const { data: existingData } = await supabase
         .from("project_data")
-        .upsert({
-          project_id: currentProject.id,
-          data_type: dbDataType,
-          data: data as any, // Supabase expects Json, so we cast to any or Json compatible
-          user_id: user.id,
-        }, {
-          onConflict: "project_id,data_type",
-        });
+        .select("id")
+        .eq("project_id", currentProject.id)
+        .eq("data_type", dbDataType)
+        .maybeSingle();
+
+      let error;
+
+      if (existingData) {
+        // 2. Update existing
+        const { error: updateError } = await supabase
+          .from("project_data")
+          .update({
+            data: data as any,
+            user_id: user.id,
+          })
+          .eq("id", existingData.id);
+        error = updateError;
+      } else {
+        // 3. Insert new
+        const { error: insertError } = await supabase
+          .from("project_data")
+          .insert({
+            project_id: currentProject.id,
+            data_type: dbDataType,
+            data: data as any,
+            user_id: user.id,
+          });
+        error = insertError;
+      }
 
       if (error) throw error;
 

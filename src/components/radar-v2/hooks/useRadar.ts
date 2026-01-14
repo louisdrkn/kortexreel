@@ -319,15 +319,24 @@ export function useRadar() {
           projectContext,
         );
 
+        const payload = {
+          projectId: currentProject.id,
+          force_refresh: options?.forceRefresh,
+          strategy: options?.strategy,
+          // AUDIT: Injecting project context for debugging
+          ...projectContext,
+        };
+
+        console.log(
+          "📝 [AUDIT INPUT] PAYLOAD TO BACKEND:",
+          JSON.stringify(payload, null, 2),
+        );
+
         // DEEP REASONING CALL
         const { data, error } = await supabase.functions.invoke(
           "discover-companies",
           {
-            body: {
-              projectId: currentProject.id,
-              force_refresh: options?.forceRefresh,
-              strategy: options?.strategy,
-            },
+            body: payload,
             headers: { Authorization: `Bearer ${currentSession.access_token}` },
           },
         );
@@ -357,11 +366,15 @@ export function useRadar() {
 
         // Save DEDUCED companies to database
         if (data.companies && data.companies.length > 0) {
+          console.log("🔍 FRONTEND RECEIVED:", data.companies);
+
           const companiesToInsert = data.companies.map((company: any) => ({
             user_id: currentSession!.user.id,
             project_id: currentProject.id,
             company_name: company.name,
-            company_url: company.website, // May be null initially
+            // FALLBACK: Generate unique URL to prevent upsert collision if website is missing
+            company_url: company.website ||
+              `missing-url-${crypto.randomUUID()}.com`,
             match_score: company.score,
             match_explanation: company.reasoning,
             analysis_status: "deduced", // NEW STATUS
@@ -370,16 +383,30 @@ export function useRadar() {
               validatedByCerveau: true,
               matchReason: company.reasoning,
               deducedAt: new Date().toISOString(),
+              originalWebsite: company.website || "Not Identified",
             }),
           }));
 
-          for (const company of companiesToInsert) {
-            await supabase
-              .from("company_analyses")
-              .upsert(company, {
-                onConflict: "project_id,company_url", // This might need a tweak if url is null
-                ignoreDuplicates: true,
-              });
+          console.log("🔍 FRONTEND INSERTING:", companiesToInsert);
+
+          // BATCH INSERT instead of loop for atomicity and performance
+          const { error: insertError } = await supabase
+            .from("company_analyses")
+            .upsert(companiesToInsert, {
+              onConflict: "project_id,company_url",
+              ignoreDuplicates: true,
+            });
+
+          if (insertError) {
+            console.error("🚨 FRONTEND INSERT ERROR:", insertError);
+            toast({
+              title: "Erreur de sauvegarde",
+              description: "Impossible de sauvegarder les résultats: " +
+                insertError.message,
+              variant: "destructive",
+            });
+          } else {
+            console.log("✅ FRONTEND INSERT SUCCESS");
           }
 
           // IMMEDIATE FEEDBACK: Show them
@@ -761,6 +788,35 @@ export function useRadar() {
     // Clear companies manually (for Tabula Rasa)
     clearCompanies: () => {
       queryClient.setQueryData(["radar-companies", currentProject?.id], []);
+    },
+
+    // 🧪 FORCE VISIBILITY TEST: Verify if frontend can display ANY card
+    injectTestCard: () => {
+      console.log("🧪 INJECTING TEST CARD...");
+      const testCard: Company = {
+        id: "test-card-" + Date.now(),
+        name: "TEST COMPANY - " + new Date().toLocaleTimeString(),
+        website: "https://example.com",
+        domain: "example.com",
+        score: 99,
+        status: "hot",
+        matchReason: "This is a forced test card to verify UI rendering.",
+        analysisStatus: "deduced",
+        signals: ["Test Signal 1", "Test Signal 2"],
+        painPoints: ["Test Pain Point"],
+        buyingSignals: ["Test Buying Signal"],
+        descriptionLong: "This is a dummy description for the test card.",
+        customHook: "{}",
+      };
+
+      queryClient.setQueryData(
+        ["radar-companies", currentProject?.id],
+        (old: Company[] = []) => [testCard, ...old],
+      );
+      toast({
+        title: "Carte Test Injectée",
+        description: "Vérifiez si elle s'affiche.",
+      });
     },
 
     // Utils

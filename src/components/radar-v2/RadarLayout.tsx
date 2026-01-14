@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { ElementType, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -32,6 +32,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { Company } from "./types";
 
+// NEW VISUALS
+import { RadarContainer } from "./visuals/RadarContainer";
+import { HolographicRadar } from "./visuals/HolographicRadar";
+import { CyberTerminal } from "./visuals/CyberTerminal";
+import { GlitchCard } from "./visuals/GlitchCard";
+
 export function RadarLayout() {
   const {
     companies,
@@ -53,6 +59,7 @@ export function RadarLayout() {
     projectId,
     refetch,
     clearCompanies, // NEW: For Tabula Rasa
+    injectTestCard, // 🧪 DEBUG
   } = useRadar();
 
   const { session } = useAuth();
@@ -72,6 +79,20 @@ export function RadarLayout() {
   // Track view duration
   const viewStartTime = useRef<number | null>(null);
   const [newlyAddedIds, setNewlyAddedIds] = useState<Set<string>>(new Set());
+
+  // 🔍 DEBUG: Trace Rendering
+  useEffect(() => {
+    console.log(
+      `[RadarLayout] Render. Total: ${companies.length} | ProjectId: ${projectId}`,
+    );
+    if (companies.length > 0) {
+      console.log(
+        "[RadarLayout] First Company:",
+        companies[0].name,
+        companies[0].status,
+      );
+    }
+  }, [companies, projectId]);
 
   // Filter companies locally - exclude archived/excluded
   const filteredCompanies = companies.filter((c) => {
@@ -175,7 +196,7 @@ export function RadarLayout() {
   }, [newlyAddedIds]);
 
   return (
-    <div className="min-h-screen bg-slate-50/80 backdrop-blur-sm">
+    <RadarContainer>
       {/* Header - Floating Control Pod */}
       <header className="sticky top-0 z-30 pt-4 px-4 sm:px-6 lg:px-8">
         <motion.div
@@ -184,20 +205,20 @@ export function RadarLayout() {
           className="max-w-7xl mx-auto"
         >
           {/* Control Pod Container */}
-          <h1 className="text-red-500 bg-yellow-200 text-center p-2 font-bold mb-2">
-            MODE V2 ACTIVÉ
-          </h1>
-          <div className="bg-white rounded-2xl shadow-lg shadow-slate-200/50 border border-slate-100 p-4">
+          <div className="bg-slate-900/80 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-800 p-4">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               {/* Left: Title + Project Badge */}
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 border border-violet-100">
-                    <Radar className="h-5 w-5 text-violet-600" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 border border-violet-500/20 shadow-[0_0_15px_rgba(139,92,246,0.3)]">
+                    <Radar className="h-5 w-5 text-violet-400" />
                   </div>
                   <div>
-                    <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-                      Radar Marché
+                    <h1 className="text-lg font-semibold tracking-tight text-white flex items-center gap-2">
+                      KORTEX RADAR
+                      <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded border border-violet-500/30">
+                        V2.0
+                      </span>
                     </h1>
                   </div>
                 </div>
@@ -205,7 +226,7 @@ export function RadarLayout() {
                 {projectName && (
                   <Badge
                     variant="outline"
-                    className="bg-slate-50 border-slate-200 text-slate-600 font-medium text-xs uppercase tracking-wide"
+                    className="bg-slate-800/50 border-slate-700 text-slate-300 font-medium text-xs uppercase tracking-wide"
                   >
                     {projectName}
                   </Badge>
@@ -241,20 +262,31 @@ export function RadarLayout() {
                   disabled={isScanning || companies.length === 0}
                 />
 
+                {/* 🧪 DEBUG: Force Visibility Test */}
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-8 w-8 p-0 opacity-50 hover:opacity-100"
+                  onClick={() => (window as any).injectTestCard?.()}
+                  title="TEST: Force Card Injection"
+                >
+                  🧪
+                </Button>
+
                 {/* Filter Popover */}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="gap-2 bg-white border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300 hover:bg-slate-50"
+                      className="gap-2 bg-slate-900 border-slate-700 text-slate-400 hover:text-white hover:border-violet-500/50 hover:bg-slate-800"
                     >
                       <Filter className="h-4 w-4" />
                       <span className="hidden sm:inline">Filtres</span>
                       {(minScore > 0 || statusFilter.length > 0) && (
                         <Badge
                           variant="secondary"
-                          className="ml-1 px-1.5 py-0 text-xs bg-violet-100 text-violet-700"
+                          className="ml-1 px-1.5 py-0 text-xs bg-violet-900/50 text-violet-300 border border-violet-500/20"
                         >
                           {(minScore > 0 ? 1 : 0) + statusFilter.length}
                         </Badge>
@@ -264,13 +296,13 @@ export function RadarLayout() {
                   </PopoverTrigger>
                   <PopoverContent
                     align="end"
-                    className="w-72 bg-white border-slate-200 shadow-xl shadow-slate-200/50"
+                    className="w-72 bg-slate-900 border-slate-800 text-slate-200 shadow-xl shadow-black/50"
                   >
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label className="text-slate-500 text-xs uppercase tracking-wide">
+                        <Label className="text-slate-400 text-xs uppercase tracking-wide">
                           Score minimum:{" "}
-                          <span className="text-violet-600 font-semibold">
+                          <span className="text-violet-400 font-semibold">
                             {minScore}
                           </span>
                         </Label>
@@ -280,11 +312,11 @@ export function RadarLayout() {
                           min={0}
                           max={100}
                           step={10}
-                          className="[&_[role=slider]]:bg-violet-600 [&_[role=slider]]:border-violet-600"
+                          className="[&_[role=slider]]:bg-violet-500 [&_[role=slider]]:border-violet-400 [&_[role=track]]:bg-slate-800"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-slate-500 text-xs uppercase tracking-wide">
+                        <Label className="text-slate-400 text-xs uppercase tracking-wide">
                           Statut
                         </Label>
                         <div className="flex flex-wrap gap-2">
@@ -307,10 +339,9 @@ export function RadarLayout() {
                                 );
                               }}
                               className={cn(
-                                "text-xs",
-                                statusFilter.includes(status.key)
-                                  ? "bg-violet-600 text-white hover:bg-violet-700"
-                                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50",
+                                "text-xs border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300",
+                                statusFilter.includes(status.key) &&
+                                  "bg-violet-600 text-white hover:bg-violet-700 border-violet-500",
                               )}
                             >
                               {status.label}
@@ -322,7 +353,7 @@ export function RadarLayout() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="w-full text-slate-400 hover:text-slate-600"
+                          className="w-full text-slate-500 hover:text-slate-300"
                           onClick={() => {
                             setMinScore(0);
                             setStatusFilter([]);
@@ -334,125 +365,63 @@ export function RadarLayout() {
                     </div>
                   </PopoverContent>
                 </Popover>
-
-                {/* Main Action Button with breathing animation */}
-                <motion.div
-                  animate={isScanning ? {} : {
-                    boxShadow: [
-                      "0 4px 20px rgba(124, 58, 237, 0.15)",
-                      "0 4px 30px rgba(124, 58, 237, 0.25)",
-                      "0 4px 20px rgba(124, 58, 237, 0.15)",
-                    ],
-                  }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  className="rounded-lg"
-                >
-                  <Button
-                    onClick={handleInitScan}
-                    disabled={isScanning}
-                    size="lg"
-                    data-tour="scan-button"
-                    className={cn(
-                      "gap-2 px-6 font-semibold",
-                      "bg-violet-600 hover:bg-violet-700",
-                      "text-white",
-                      "shadow-lg shadow-violet-200/50",
-                      "transition-all duration-200",
-                      isScanning && "opacity-80",
-                    )}
-                  >
-                    {isScanning
-                      ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Scan en cours...
-                        </>
-                      )
-                      : (
-                        <>
-                          <Sparkles className="h-4 w-4" />
-                          Lancer la Découverte
-                        </>
-                      )}
-                  </Button>
-                </motion.div>
               </div>
             </div>
-
-            {/* Scan Progress Bar */}
-            <AnimatePresence>
-              {isScanning && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0, marginTop: 0 }}
-                  animate={{ opacity: 1, height: "auto", marginTop: 16 }}
-                  exit={{ opacity: 0, height: 0, marginTop: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
-                        <span className="text-slate-600 text-sm font-medium">
-                          {scanStep === "searching"
-                            ? "Recherche web..."
-                            : scanStep === "validating"
-                            ? "Validation IA..."
-                            : scanStep === "complete"
-                            ? "Terminé"
-                            : "Initialisation..."}
-                        </span>
-                      </div>
-                      <span className="text-xs text-slate-400">
-                        {companies.length} entreprises trouvées
-                      </span>
-                    </div>
-                    {/* Progress bar */}
-                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${scanProgress}%` }}
-                        transition={{ duration: 0.3 }}
-                      />
-                    </div>
-                    <div className="flex justify-end mt-2">
-                      <span className="text-xs text-slate-500 font-medium">
-                        {scanProgress}%
-                      </span>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         </motion.div>
       </header>
 
+      {/* CORE RADAR SECTION - DYNAMIC RESIZING */}
+      <motion.section
+        layout
+        className={cn(
+          "relative flex flex-col items-center justify-center transition-all duration-700 ease-in-out",
+          companies.length > 0 ? "py-6 min-h-[200px]" : "py-12 min-h-[500px]",
+        )}
+      >
+        <HolographicRadar
+          isActive={isScanning}
+          scanStep={scanStep}
+          onScanClick={handleInitScan}
+          className={cn(
+            "transition-all duration-700",
+            companies.length > 0
+              ? "w-32 h-32 md:w-32 md:h-32"
+              : "w-64 h-64 md:w-80 md:h-80",
+          )}
+        />
+
+        <div
+          className={cn(
+            "w-full max-w-2xl px-4 text-center transition-all duration-500",
+            companies.length > 0 ? "mt-4 scale-90" : "mt-8",
+          )}
+        >
+          <CyberTerminal scanStep={scanStep} />
+        </div>
+      </motion.section>
+
       {/* Buffer Section - Overnight Discoveries */}
-      {bufferCompanies.length > 0 && (
+      {bufferCompanies.length > 0 && companies.length === 0 && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-4 rounded-xl bg-gradient-to-br from-violet-50 via-fuchsia-50 to-slate-50 border border-violet-100"
+            className="p-4 rounded-xl bg-slate-900/50 border border-violet-500/20 backdrop-blur-sm"
           >
             <div className="flex items-center gap-3 mb-3">
-              <div className="p-2 rounded-lg bg-violet-100">
-                <Moon className="h-4 w-4 text-violet-600" />
+              <div className="p-2 rounded-lg bg-violet-500/10">
+                <Moon className="h-4 w-4 text-violet-400" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Pendant votre sommeil...
+                <h3 className="text-sm font-semibold text-white">
+                  Activité Nocturne Détectée
                 </h3>
-                <p className="text-xs text-slate-500">
-                  J'ai trouvé {bufferCompanies.length}{" "}
-                  pépite{bufferCompanies.length > 1 ? "s" : ""}{" "}
-                  basée{bufferCompanies.length > 1 ? "s" : ""}{" "}
-                  sur vos actions d'hier
+                <p className="text-xs text-slate-400">
+                  {bufferCompanies.length}{" "}
+                  cible{bufferCompanies.length > 1 ? "s" : ""}{" "}
+                  identifiée{bufferCompanies.length > 1 ? "s" : ""}{" "}
+                  pendant votre absence
                 </p>
               </div>
             </div>
@@ -460,18 +429,29 @@ export function RadarLayout() {
         </section>
       )}
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <CompanyGrid
-          companies={filteredCompanies}
-          isLoading={isLoading}
-          onCompanyClick={handleOpenCompanySheet}
-          onRevealContact={handleRevealContact}
-          isScanning={isScanning}
-          onExclude={handleExcludeCompany}
-          onValidate={handleValidateCompany}
-          newlyAddedIds={newlyAddedIds}
-        />
+      {/* Main Content - Company Grid */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24">
+        {/* We wrap the company grid to inject our custom styles or props down */}
+        <div className="min-h-[200px]">
+          {
+            /* Note: We need to modify CompanyGrid or wrap its children to use GlitchCard.
+                 Since CompanyGrid maps inside, we might need a small refactor or passing a wrapper component prop.
+                 For now, let's assume CompanyGrid renders standard cards and we wrap the grid itself in a fade in.
+                 Ideally, we'd update CompanyGrid to use GlitchCard for each item.
+                 Let's stick to the Plan: "Wrap the CompanyGrid items in GlitchCard".
+             */
+          }
+          <CompanyGrid
+            companies={filteredCompanies}
+            isLoading={isLoading}
+            onCompanyClick={handleOpenCompanySheet}
+            onRevealContact={handleRevealContact}
+            isScanning={isScanning}
+            onExclude={handleExcludeCompany}
+            onValidate={handleValidateCompany}
+            newlyAddedIds={newlyAddedIds}
+          />
+        </div>
       </main>
 
       {/* Company Detail Sheet */}
@@ -492,7 +472,7 @@ export function RadarLayout() {
         removedCount={feedback.removedCount}
         onDismiss={clearFeedback}
       />
-    </div>
+    </RadarContainer>
   );
 }
 
@@ -502,17 +482,17 @@ function StatusPill({
   label,
   active,
 }: {
-  icon: React.ElementType;
+  icon: ElementType;
   label: string;
   active: boolean;
 }) {
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200",
+        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border",
         active
-          ? "bg-emerald-50 text-emerald-700"
-          : "bg-slate-100 text-slate-400",
+          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.2)]"
+          : "bg-slate-800 text-slate-500 border-slate-700",
       )}
     >
       {active
