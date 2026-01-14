@@ -18,7 +18,8 @@ import {
 } from "../_shared/api-clients.ts";
 import { buildProjectContext } from "../_shared/project-context.ts";
 
-interface SerperResult {
+// RENAMED: Generic Search Result
+interface SearchResult {
   title: string;
   link: string;
   snippet: string;
@@ -28,11 +29,57 @@ interface SerperResult {
   position?: number;
 }
 
-interface SerperResponse {
-  organic: SerperResult[];
-  searchParameters: any;
-  peopleAlsoAsk?: any[];
-  relatedSearches?: any[];
+interface IntentionAnalysis {
+  productSold: string;
+  targetDepartment: string;
+  primaryJobTitle: string;
+  primaryReason: string;
+  alternativeJobTitle: string;
+  alternativeReason: string;
+  companySizeEstimate: string;
+  confidenceLevel: number;
+}
+
+interface ContactResult {
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  jobTitle: string;
+  linkedinUrl: string;
+  companyName: string;
+  matchScore: number;
+  matchReason: string;
+  whyThisRole: string;
+  scoreBreakdown: {
+    titleMatch: number;
+    tenureBonus: number;
+    activityBonus: number;
+    total: number;
+  };
+}
+
+interface PrecisionContactResult {
+  success: boolean;
+  targetingAnalysis: IntentionAnalysis;
+  searchPhases: {
+    phase1: {
+      status: string;
+      reasoning: string;
+    };
+    phase2: {
+      status: string;
+      primaryFound: boolean;
+      alternativeFound: boolean;
+      candidatesRejected: number;
+    };
+    phase3: {
+      status: string;
+      scoredCandidates: number;
+    };
+  };
+  primaryContact?: ContactResult;
+  alternativeContact?: ContactResult;
+  error?: string;
 }
 
 async function phase1AnalyseIntention(
@@ -138,8 +185,52 @@ interface Candidate {
   rejectionReason?: string;
 }
 
+// NEW: Firecrawl Search Replacement
+async function searchFirecrawl(
+  firecrawlKey: string,
+  companyName: string,
+  jobTitle: string,
+): Promise<any[]> {
+  const query = `site:linkedin.com/in "${companyName}" "${jobTitle}"`;
+  console.log(`[PRECISION]    Firecrawl Query: ${query}`);
+
+  try {
+    const response = await fetch("https://api.firecrawl.dev/v1/search", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${firecrawlKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: query,
+        limit: 5,
+        lang: "fr",
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`[PRECISION] Firecrawl Error: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    if (!data.success || !data.data) return [];
+
+    // Adapt Firecrawl result to "Serper-like" structure for compatibility with existing parse function
+    // Firecrawl data: { url, title, description }
+    return data.data.map((item: any) => ({
+      link: item.url,
+      title: item.title,
+      snippet: item.description,
+    })).filter((r: any) => r.link && r.link.includes("/in/"));
+  } catch (e) {
+    console.warn(`[PRECISION] Firecrawl Search Error:`, e);
+    return [];
+  }
+}
+
 async function phase2RechercheDouble(
-  serperApiKey: string,
+  firecrawlKey: string, // Changed from serperApiKey
   companyName: string,
   primaryJobTitle: string,
   alternativeJobTitle: string,
@@ -148,7 +239,7 @@ async function phase2RechercheDouble(
   alternativeCandidates: Candidate[];
   rejected: number;
 }> {
-  console.log("[PRECISION] 🔎 PHASE 2: Recherche Double...");
+  console.log("[PRECISION] 🔎 PHASE 2: Recherche Double (via Firecrawl)...");
 
   const primaryCandidates: Candidate[] = [];
   const alternativeCandidates: Candidate[] = [];
@@ -161,13 +252,14 @@ async function phase2RechercheDouble(
 
   // Recherche pour le CONTACT PRINCIPAL
   console.log(`[PRECISION]    👑 Recherche Principal: ${primaryJobTitle}`);
-  const primaryResults = await searchLinkedIn(
-    serperApiKey,
+  const primaryResults = await searchFirecrawl(
+    firecrawlKey,
     cleanCompany,
     primaryJobTitle,
   );
 
   for (const result of primaryResults) {
+    // Note: parseCandidate assumes "SerperResult" structure, but we mapped Firecrawl to match it (link, title, snippet)
     const candidate = parseCandidate(result, cleanCompany, "primary");
     if (candidate.isCurrentPosition) {
       primaryCandidates.push(candidate);
@@ -184,8 +276,8 @@ async function phase2RechercheDouble(
   console.log(
     `[PRECISION]    🛡️ Recherche Alternative: ${alternativeJobTitle}`,
   );
-  const alternativeResults = await searchLinkedIn(
-    serperApiKey,
+  const alternativeResults = await searchFirecrawl(
+    firecrawlKey,
     cleanCompany,
     alternativeJobTitle,
   );
@@ -215,40 +307,8 @@ async function phase2RechercheDouble(
   return { primaryCandidates, alternativeCandidates, rejected: totalRejected };
 }
 
-async function searchLinkedIn(
-  serperApiKey: string,
-  companyName: string,
-  jobTitle: string,
-): Promise<SerperResult[]> {
-  const query = `site:linkedin.com/in "${companyName}" "${jobTitle}"`;
-
-  try {
-    const response = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: {
-        "X-API-KEY": serperApiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        q: query,
-        num: 5,
-        gl: "fr",
-        hl: "fr",
-      }),
-    });
-
-    if (!response.ok) return [];
-
-    const data: SerperResponse = await response.json();
-    return (data.organic || []).filter((r) => r.link.includes("/in/"));
-  } catch (e) {
-    console.warn(`[PRECISION]    Search error:`, e);
-    return [];
-  }
-}
-
 function parseCandidate(
-  result: SerperResult,
+  result: SearchResult,
   companyName: string,
   searchType: "primary" | "alternative",
 ): Candidate {
@@ -495,14 +555,13 @@ Deno.serve(async (req) => {
   );
 
   try {
-    const serperApiKey = Deno.env.get("SERPER_API_KEY");
-    // const googleApiKey = Deno.env.get("GOOGLE_API_KEY"); // REMOVED
+    const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
 
-    if (!serperApiKey) {
+    if (!firecrawlKey) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "API key manquante (SERPER_API_KEY)",
+          error: "API key manquante (FIRECRAWL_API_KEY)",
         }),
         {
           status: 200,
@@ -558,7 +617,7 @@ Deno.serve(async (req) => {
     // PHASE 2: Recherche Double (Principal + Alternative)
     const { primaryCandidates, alternativeCandidates, rejected } =
       await phase2RechercheDouble(
-        serperApiKey,
+        firecrawlKey,
         companyName,
         intentionAnalysis.primaryJobTitle,
         intentionAnalysis.alternativeJobTitle,

@@ -38,9 +38,9 @@ export const corsHeaders = {
 };
 
 export const GEMINI_MODELS = {
-  PRO: "gemini-1.5-pro", // Stable High IQ - Version alias toujours à jour
-  FLASH: "gemini-1.5-pro", // FORCED STABILITY: Use Pro everywhere to avoid 404s
-  ULTRA: "gemini-1.5-pro", // Fallback to Pro for stability
+  PRO: "gemini-2.5-pro", // Stable High IQ - Version alias toujours à jour
+  FLASH: "gemini-2.5-pro", // FORCED STABILITY: Use Pro everywhere to avoid 404s
+  ULTRA: "gemini-2.5-pro", // Fallback to Pro for stability
 };
 
 export class GeminiClient {
