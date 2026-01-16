@@ -1,4 +1,5 @@
 import { repairJson } from "./json-repair.ts";
+import { GeminiGenerationConfig } from "./types.ts";
 
 export const API_KEYS = {
   get FIRECRAWL() {
@@ -38,9 +39,9 @@ export const corsHeaders = {
 };
 
 export const GEMINI_MODELS = {
-  PRO: "gemini-2.5-pro", // Stable High IQ - Version alias toujours à jour
-  FLASH: "gemini-2.5-pro", // FORCED STABILITY: Use Pro everywhere to avoid 404s
-  ULTRA: "gemini-2.5-pro", // Fallback to Pro for stability
+  PRO: "gemini-1.5-pro", // Stable High IQ
+  FLASH: "gemini-1.5-flash", // Fast & Cost Effective
+  ULTRA: "gemini-1.5-pro", // Using Pro for "Ultra" tier to ensure stability & high reasoning
 };
 
 export class GeminiClient {
@@ -55,19 +56,13 @@ export class GeminiClient {
     prompt: string,
     model: string = GEMINI_MODELS.FLASH,
     systemInstruction?: string,
-    generationConfig?: {
-      temperature?: number;
-      topP?: number;
-      topK?: number;
-      maxOutputTokens?: number;
-      stopSequences?: string[];
-    },
+    generationConfig?: GeminiGenerationConfig,
   ): Promise<string> {
     const url = `${this.baseUrl}/${model}:generateContent?key=${this.apiKey}`;
 
     const payload: {
       contents: { parts: { text: string }[] }[];
-      generationConfig: any;
+      generationConfig: GeminiGenerationConfig;
       systemInstruction?: { parts: { text: string }[] };
     } = {
       contents: [{ parts: [{ text: prompt }] }],
@@ -107,26 +102,20 @@ export class GeminiClient {
     }
   }
 
-  async generateJSON<T = any>(
+  async generateJSON<T = Record<string, unknown>>(
     prompt: string,
     model: string = GEMINI_MODELS.PRO,
     systemInstruction?: string,
-    tools?: any[],
-    generationConfig?: {
-      temperature?: number;
-      topP?: number;
-      topK?: number;
-      maxOutputTokens?: number;
-      responseMimeType?: string;
-    },
+    tools?: unknown[],
+    generationConfig?: GeminiGenerationConfig,
   ): Promise<T> {
     const url = `${this.baseUrl}/${model}:generateContent?key=${this.apiKey}`;
 
     const payload: {
       contents: { parts: { text: string }[] }[];
-      generationConfig: any;
+      generationConfig: GeminiGenerationConfig;
       systemInstruction?: { parts: { text: string }[] };
-      tools?: any[];
+      tools?: unknown[];
     } = {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
@@ -171,6 +160,47 @@ export class GeminiClient {
       return parsed;
     } catch (error) {
       console.error("Gemini JSON Request Failed:", error);
+      throw error;
+    }
+  }
+
+  async embedContent(
+    text: string,
+    model: string = "text-embedding-004",
+  ): Promise<number[]> {
+    const url = `${this.baseUrl}/${model}:embedContent?key=${this.apiKey}`;
+
+    // Cleaning text slightly to avoid potential issues (optional but good practice)
+    const cleanText = text.replace(/\x00/g, "").trim();
+
+    const payload = {
+      content: { parts: [{ text: cleanText }] },
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Gemini Embedding Error (${response.status}): ${errorText}`,
+        );
+      }
+
+      const data = await response.json();
+      const embedding = data.embedding?.values;
+
+      if (!embedding) {
+        throw new Error("No embedding generated");
+      }
+
+      return embedding;
+    } catch (error) {
+      console.error("Gemini Embedding Request Failed:", error);
       throw error;
     }
   }

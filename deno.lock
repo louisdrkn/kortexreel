@@ -1,5 +1,8 @@
 {
   "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.90.1"
+  },
   "remote": {
     "https://deno.land/std@0.160.0/_util/assert.ts": "e94f2eb37cebd7f199952e242c77654e43333c1ac4c5c700e929ea3aa5489f74",
     "https://deno.land/std@0.160.0/_util/os.ts": "8a33345f74990e627b9dfe2de9b040004b08ea5146c7c9e8fe9a29070d193934",
@@ -66,7 +69,8 @@
     "https://deno.land/x/postgres@v0.17.0/query/query.ts": "edb473cbcfeff2ee1c631272afb25d079d06b66b5853f42492725b03ffa742b6",
     "https://deno.land/x/postgres@v0.17.0/query/transaction.ts": "8e75c3ce0aca97da7fe126e68f8e6c08d640e5c8d2016e62cee5c254bebe7fe8",
     "https://deno.land/x/postgres@v0.17.0/utils/deferred.ts": "dd94f2a57355355c47812b061a51b55263f72d24e9cb3fdb474c7519f4d61083",
-    "https://deno.land/x/postgres@v0.17.0/utils/utils.ts": "19c3527ddd5c6c4c49ae36397120274c7f41f9d3cbf479cb36065d23329e9f90"
+    "https://deno.land/x/postgres@v0.17.0/utils/utils.ts": "19c3527ddd5c6c4c49ae36397120274c7f41f9d3cbf479cb36065d23329e9f90",
+    "https://esm.sh/@supabase/supabase-js@2.90.1": "fcf5e194d637ff365df76d1806e7c2f239905c4b08e83e5d95690a2b22e21a1d"
   },
   "workspace": {
     "packageJson": {
@@ -105,6 +109,7 @@
         "npm:@tanstack/react-query@^5.83.0",
         "npm:@types/dompurify@^3.0.5",
         "npm:@types/file-saver@^2.0.7",
+        "npm:@types/lodash@^4.17.23",
         "npm:@types/node@^22.16.5",
         "npm:@types/react-dom@^18.3.7",
         "npm:@types/react@^18.3.23",
@@ -125,10 +130,12 @@
         "npm:framer-motion@^11.18.2",
         "npm:globals@^15.15.0",
         "npm:input-otp@^1.4.2",
+        "npm:lodash@^4.17.21",
         "npm:lovable-tagger@^1.1.13",
         "npm:lucide-react@0.462",
         "npm:marked@^17.0.1",
         "npm:next-themes@0.3",
+        "npm:pdf-parse@^2.4.5",
         "npm:pdfjs-dist@^4.4.168",
         "npm:postcss@^8.5.6",
         "npm:react-day-picker@^8.10.1",

@@ -9,7 +9,9 @@ import {
   ExternalLink,
   Linkedin,
   Loader2,
+  MapPin,
   Sparkles,
+  Star,
   Target,
   TrendingUp,
   User,
@@ -34,6 +36,7 @@ interface CompanyCardProps {
   onClick: (company: Company) => void;
   onRevealContact?: (company: Company) => Promise<unknown>;
   index?: number;
+  isAnalyzing?: boolean;
 }
 
 function getScoreColor(score: number) {
@@ -86,7 +89,8 @@ function extractDomain(url?: string): string | null {
 }
 
 export function CompanyCard(
-  { company, onClick, onRevealContact, index = 0 }: CompanyCardProps,
+  { company, onClick, onRevealContact, index = 0, isAnalyzing = false }:
+    CompanyCardProps,
 ) {
   const navigate = useNavigate();
   const { addProspect, checkProspectExists } = useProspects();
@@ -309,6 +313,50 @@ export function CompanyCard(
                     )[0]}
                 </p>
               )}
+              {company.googleMaps && (
+                <div className="mt-1 flex items-center gap-2">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <a
+                          href={company.googleMaps.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex items-center gap-1 text-xs text-slate-500 hover:text-violet-300 transition-colors group/map"
+                        >
+                          <MapPin className="h-3 w-3 text-slate-600 group-hover/map:text-violet-400" />
+                          <span className="truncate max-w-[150px]">
+                            {company.googleMaps.formattedAddress.split(",")[1]
+                              ?.trim() || "Voir sur la carte"}
+                          </span>
+                        </a>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="bottom"
+                        className="bg-slate-900 border-slate-800 p-3"
+                      >
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-slate-200">
+                            {company.googleMaps.formattedAddress}
+                          </p>
+                          {company.googleMaps.rating && (
+                            <div className="flex items-center gap-1.5 text-xs text-amber-400">
+                              <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                              <span className="font-bold">
+                                {company.googleMaps.rating}
+                              </span>
+                              <span className="text-slate-500">
+                                ({company.googleMaps.userRatingsTotal} avis)
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
             </div>
           </div>
 
@@ -329,61 +377,110 @@ export function CompanyCard(
 
       {/* Content */}
       <div className="p-4 space-y-3">
-        {/* Match Origin Badges */}
-        {(company.validatedByCible || company.validatedByCerveau ||
-          company.analysisStatus === "deduced") && (
-          <TooltipProvider>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {company.analysisStatus === "deduced" && (
-                <Badge
-                  variant="outline"
-                  className="text-xs bg-indigo-500/10 border-indigo-500/30 text-indigo-300 gap-1 animate-pulse"
-                >
-                  <Sparkles className="h-3 w-3" />
-                  IA Stratège
-                </Badge>
-              )}
-              {company.validatedByCible && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge
-                      variant="outline"
-                      className="text-xs bg-emerald-500/10 border-emerald-500/30 text-emerald-400 gap-1"
-                    >
-                      <Target className="h-3 w-3" />
-                      Cible ✓
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    className="max-w-xs bg-slate-900 border-slate-800 text-slate-200"
-                  >
-                    <p className="text-xs">Validé par Définition Cible</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-              {company.validatedByCerveau && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge
-                      variant="outline"
-                      className="text-xs bg-violet-500/10 border-violet-500/30 text-violet-400 gap-1"
-                    >
-                      <Brain className="h-3 w-3" />
-                      Cerveau ✓
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    className="max-w-xs bg-slate-900 border-slate-800 text-slate-200"
-                  >
-                    <p className="text-xs">Validé par Cerveau Agence</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
+        {/* DISCOVERED STATE PROMPT */}
+        {company.analysisStatus === "discovered" && !isAnalyzing && (
+          <div className="flex flex-col items-center justify-center py-4 space-y-3 border-2 border-dashed border-slate-700/50 rounded-lg bg-slate-800/20">
+            <Brain className="h-8 w-8 text-slate-600 animate-pulse" />
+            <div className="text-center">
+              <p className="text-sm font-medium text-slate-300">
+                Analyse IA Disponible
+              </p>
+              <p className="text-xs text-slate-500">
+                Cliquez pour lancer le deep dive
+              </p>
             </div>
-          </TooltipProvider>
+            <Button
+              size="sm"
+              variant="default"
+              className="bg-violet-600/80 hover:bg-violet-600 text-white gap-2 shadow-lg shadow-violet-900/40"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClick(company);
+              }}
+            >
+              <Sparkles className="h-3 w-3" />
+              Lancer l'analyse
+            </Button>
+          </div>
         )}
+
+        {/* ANALYZING STATE LOADER */}
+        {isAnalyzing && (
+          <div className="absolute inset-0 z-20 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 space-y-4">
+            <div className="relative">
+              <div className="w-12 h-12 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Brain className="h-5 w-5 text-violet-400 animate-pulse" />
+              </div>
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 animate-pulse">
+                ANALYSE PROFONDE...
+              </p>
+              <p className="text-xs text-slate-400">
+                Scraping du site & Croisement Axole
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Match Origin Badges (Only show if NOT discovered/analyzing) */}
+        {company.analysisStatus !== "discovered" &&
+          (company.validatedByCible || company.validatedByCerveau ||
+            company.analysisStatus === "deduced") &&
+          (
+            <TooltipProvider>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {company.analysisStatus === "deduced" && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs bg-indigo-500/10 border-indigo-500/30 text-indigo-300 gap-1 animate-pulse"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    IA Stratège
+                  </Badge>
+                )}
+                {company.validatedByCible && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge
+                        variant="outline"
+                        className="text-xs bg-emerald-500/10 border-emerald-500/30 text-emerald-400 gap-1"
+                      >
+                        <Target className="h-3 w-3" />
+                        Cible ✓
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      className="max-w-xs bg-slate-900 border-slate-800 text-slate-200"
+                    >
+                      <p className="text-xs">Validé par Définition Cible</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {company.validatedByCerveau && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge
+                        variant="outline"
+                        className="text-xs bg-violet-500/10 border-violet-500/30 text-violet-400 gap-1"
+                      >
+                        <Brain className="h-3 w-3" />
+                        Cerveau ✓
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      className="max-w-xs bg-slate-900 border-slate-800 text-slate-200"
+                    >
+                      <p className="text-xs">Validé par Cerveau Agence</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TooltipProvider>
+          )}
 
         {/* Enrichment Status Loader */}
         {!company.logoUrl &&

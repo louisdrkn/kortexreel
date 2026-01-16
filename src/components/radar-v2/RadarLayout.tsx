@@ -11,6 +11,7 @@ import {
   Radar,
   Sparkles,
   Target,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ import { RadarContainer } from "./visuals/RadarContainer";
 import { HolographicRadar } from "./visuals/HolographicRadar";
 import { CyberTerminal } from "./visuals/CyberTerminal";
 import { GlitchCard } from "./visuals/GlitchCard";
+import { ValidationMatrix } from "./visuals/ValidationMatrix";
 
 export function RadarLayout() {
   const {
@@ -50,7 +52,6 @@ export function RadarLayout() {
     scanProgress,
     scanStep,
     scanMarket,
-    isAnalyzing,
     analyzeCompany,
     isFindingDecisionMaker,
     findDecisionMaker,
@@ -58,8 +59,19 @@ export function RadarLayout() {
     projectContext,
     projectId,
     refetch,
+    analyzingCompanyId, // NEW: Track specific analysis
     clearCompanies, // NEW: For Tabula Rasa
     injectTestCard, // 🧪 DEBUG
+    resetRadar, // NEW: Reset & Refine
+
+    // Double-Pass
+    strategicIdentity,
+    proposedStrategy,
+    executeStrategy,
+    analyzeMarket,
+    isStrategizing,
+    isExecuting,
+    forceReloadRadar, // NEW: Force Reset
   } = useRadar();
 
   const { session } = useAuth();
@@ -111,8 +123,12 @@ export function RadarLayout() {
     c.analysisStatus === "buffer"
   );
 
+  // VIEW MODE: Show Big Radar if scanning OR empty. Show Small if results exist and idle.
+  const isBigMode = companies.length === 0 || isScanning || isStrategizing ||
+    isExecuting;
+
   const handleInitScan = () => {
-    scanMarket();
+    analyzeMarket(); // Start Phase 1
   };
 
   const handleRevealContact = async (company: Company) => {
@@ -145,8 +161,15 @@ export function RadarLayout() {
     }
   };
 
-  // Handle company sheet open (track view start)
-  const handleOpenCompanySheet = (company: Company) => {
+  // Handle company sheet open (track view start) OR trigger analysis
+  const handleCompanyClick = (company: Company) => {
+    // ON-DEMAND LOGIC: If discovered but not analyzed, trigger analysis
+    if (company.analysisStatus === "discovered" || !company.score) {
+      analyzeCompany(company);
+      return;
+    }
+
+    // Normal behavior: Open sheet
     viewStartTime.current = Date.now();
     if (company.id) {
       trackInteraction(company.id, "viewed");
@@ -177,7 +200,7 @@ export function RadarLayout() {
       },
       async () => {
         // Trigger fresh scan after recalibration with FORCE REFRESH
-        await scanMarket({ forceRefresh: true, strategy: "deep_deduction" });
+        await scanMarket({ forceRefresh: true }); // strategy implied by new flow
       },
     );
     if (result?.success) {
@@ -271,6 +294,18 @@ export function RadarLayout() {
                   title="TEST: Force Card Injection"
                 >
                   🧪
+                </Button>
+
+                {/* 🔄 RESET & REFINE BUTTON */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-red-950/30 border-red-900/50 text-red-400 hover:text-red-300 hover:bg-red-900/50 hover:border-red-500/50 transition-all duration-300"
+                  onClick={forceReloadRadar}
+                  title="Supprimer tout et recommencer"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Reload UI</span>
                 </Button>
 
                 {/* Filter Popover */}
@@ -372,87 +407,119 @@ export function RadarLayout() {
       </header>
 
       {/* CORE RADAR SECTION - DYNAMIC RESIZING */}
-      <motion.section
-        layout
-        className={cn(
-          "relative flex flex-col items-center justify-center transition-all duration-700 ease-in-out",
-          companies.length > 0 ? "py-6 min-h-[200px]" : "py-12 min-h-[500px]",
-        )}
-      >
-        <HolographicRadar
-          isActive={isScanning}
-          scanStep={scanStep}
-          onScanClick={handleInitScan}
-          className={cn(
-            "transition-all duration-700",
-            companies.length > 0
-              ? "w-32 h-32 md:w-32 md:h-32"
-              : "w-64 h-64 md:w-80 md:h-80",
-          )}
-        />
-
-        <div
-          className={cn(
-            "w-full max-w-2xl px-4 text-center transition-all duration-500",
-            companies.length > 0 ? "mt-4 scale-90" : "mt-8",
-          )}
-        >
-          <CyberTerminal scanStep={scanStep} />
-        </div>
-      </motion.section>
-
-      {/* Buffer Section - Overnight Discoveries */}
-      {bufferCompanies.length > 0 && companies.length === 0 && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
+      <AnimatePresence mode="wait">
+        {/* VALIDATION MATRIX (Phase 1.5) */}
+        {scanStep === "reviewing" && strategicIdentity && proposedStrategy && (
+          <motion.section
+            key="validation"
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="p-4 rounded-xl bg-slate-900/50 border border-violet-500/20 backdrop-blur-sm"
+            exit={{ opacity: 0, y: -20 }}
+            className="py-12 min-h-[500px] flex items-center justify-center"
           >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-2 rounded-lg bg-violet-500/10">
-                <Moon className="h-4 w-4 text-violet-400" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-white">
-                  Activité Nocturne Détectée
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {bufferCompanies.length}{" "}
-                  cible{bufferCompanies.length > 1 ? "s" : ""}{" "}
-                  identifiée{bufferCompanies.length > 1 ? "s" : ""}{" "}
-                  pendant votre absence
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        </section>
-      )}
+            <ValidationMatrix
+              identity={strategicIdentity}
+              strategy={proposedStrategy}
+              onConfirm={() => executeStrategy()}
+              onCancel={() => resetRadar()}
+              isExecuting={isExecuting}
+            />
+          </motion.section>
+        )}
 
-      {/* Main Content - Company Grid */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24">
-        {/* We wrap the company grid to inject our custom styles or props down */}
-        <div className="min-h-[200px]">
-          {
-            /* Note: We need to modify CompanyGrid or wrap its children to use GlitchCard.
-                 Since CompanyGrid maps inside, we might need a small refactor or passing a wrapper component prop.
-                 For now, let's assume CompanyGrid renders standard cards and we wrap the grid itself in a fade in.
-                 Ideally, we'd update CompanyGrid to use GlitchCard for each item.
-                 Let's stick to the Plan: "Wrap the CompanyGrid items in GlitchCard".
-             */
-          }
-          <CompanyGrid
-            companies={filteredCompanies}
-            isLoading={isLoading}
-            onCompanyClick={handleOpenCompanySheet}
-            onRevealContact={handleRevealContact}
-            isScanning={isScanning}
-            onExclude={handleExcludeCompany}
-            onValidate={handleValidateCompany}
-            newlyAddedIds={newlyAddedIds}
-          />
-        </div>
-      </main>
+        {/* SCANNER UI (Phase 1 & 2) */}
+        {scanStep !== "reviewing" && (
+          <motion.section
+            key="scanner"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{
+              opacity: 0,
+              scale: 0.8,
+              transition: { duration: 0.5, ease: "easeInOut" },
+            }}
+            className={cn(
+              "relative flex flex-col items-center justify-center transition-all duration-700 ease-in-out",
+              isBigMode ? "py-12 min-h-[500px]" : "py-6 min-h-[200px]",
+            )}
+          >
+            <HolographicRadar
+              isActive={isScanning || isStrategizing || isExecuting}
+              scanStep={scanStep}
+              onScanClick={handleInitScan}
+              className={cn(
+                "transition-all duration-700",
+                isBigMode
+                  ? "w-64 h-64 md:w-80 md:h-80"
+                  : "w-32 h-32 md:w-40 md:h-40",
+              )}
+            />
+
+            <div
+              className={cn(
+                "w-full max-w-2xl px-4 text-center transition-all duration-500",
+                isBigMode
+                  ? "mt-8 opacity-100 h-auto"
+                  : "mt-0 opacity-0 h-0 overflow-hidden",
+              )}
+            >
+              <CyberTerminal scanStep={scanStep} />
+            </div>
+
+            {/* Show buffer only in scanner mode */}
+            {bufferCompanies.length > 0 && companies.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-8 p-4 rounded-xl bg-slate-900/50 border border-violet-500/20 backdrop-blur-sm max-w-md mx-auto"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 rounded-lg bg-violet-500/10">
+                    <Moon className="h-4 w-4 text-violet-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      Activité Nocturne Détectée
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {bufferCompanies.length}{" "}
+                      cible{bufferCompanies.length > 1 ? "s" : ""}{" "}
+                      identifiée{bufferCompanies.length > 1 ? "s" : ""}{" "}
+                      pendant votre absence
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </motion.section>
+        )}
+
+        {companies.length > 0 && scanStep !== "reviewing" && (
+          <>
+            <motion.main
+              key="results"
+              initial={{ opacity: 0, y: 100 }} // Slide up from bottom
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 w-full"
+            >
+              <div className="min-h-[200px]">
+                <CompanyGrid
+                  companies={filteredCompanies}
+                  isLoading={isLoading}
+                  onCompanyClick={handleCompanyClick}
+                  onRevealContact={handleRevealContact}
+                  isScanning={isScanning}
+                  analyzingCompanyId={analyzingCompanyId}
+                  onExclude={handleExcludeCompany}
+                  onValidate={handleValidateCompany}
+                  newlyAddedIds={newlyAddedIds}
+                />
+              </div>
+            </motion.main>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Company Detail Sheet */}
       <CompanyDetailSheet
@@ -461,7 +528,7 @@ export function RadarLayout() {
         onClose={handleCloseSheet}
         onAnalyze={analyzeCompany}
         onFindDecisionMaker={findDecisionMaker}
-        isAnalyzing={isAnalyzing}
+        isAnalyzing={!!analyzingCompanyId} // Pass boolean if needed, or update prop
         isFindingDecisionMaker={isFindingDecisionMaker}
       />
 

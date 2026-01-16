@@ -105,10 +105,13 @@ serveFunction(async (req) => {
     - Format JSON strict : tableau de strings uniquement.
     `;
 
+    // MIGRATION: ULTRA + 0.0 Temp
     const result = await gemini.generateJSON(
       prompt,
-      GEMINI_MODELS.FLASH,
+      GEMINI_MODELS.ULTRA,
       "Tu es un stratège commercial expert.",
+      undefined,
+      { temperature: 0.0 },
     );
 
     return new Response(JSON.stringify({ dreamClients: result }), {
@@ -151,7 +154,7 @@ serveFunction(async (req) => {
     - Secteurs (ex: Retail, Industrie...)
     - Taille (PME, ETI, Grand Compte ?)
     - Géographie
-
+    
     2. CONTEXTE ADDITIONNEL :
     - Pitch : La proposition de valeur unique (extraite des docs).
     - Méthodologie : Comment ils travaillent (extraite des docs).
@@ -175,10 +178,13 @@ serveFunction(async (req) => {
     }
     `;
 
+    // MIGRATION: ULTRA + 0.0 Temp
     const result = await gemini.generateJSON(
       prompt,
-      GEMINI_MODELS.FLASH,
+      GEMINI_MODELS.ULTRA,
       "Tu es le Directeur de la Stratégie Kortex. Analyse chirurgicale.",
+      undefined,
+      { temperature: 0.0 },
     );
 
     return new Response(JSON.stringify(result), {
@@ -190,23 +196,28 @@ serveFunction(async (req) => {
   const {
     context = "",
     userContext = "",
-    companyData = "",
+    companyData = "", // keeping generic param usage
     userQuery = "",
     systemInstruction = "",
   } = body;
 
   console.log(`   Mode: ${mode}, Query length: ${userQuery.length}`);
-  // ... (rest of legacy code logic if needed, but for now we focus on new missions)
 
-  // Fallback standard usage logic (re-implement minimal logic for legacy calls if any)
   const systemPrompt = systemInstruction || SYSTEM_PROMPTS[mode] ||
     SYSTEM_PROMPTS.analysis;
   const fullPrompt =
     `SYSTEM: ${systemPrompt}\n\nCONTEXTE:\n${context}\n\nQUERY:\n${userQuery}`;
-  const result = await gemini.generateContent(fullPrompt, GEMINI_MODELS.PRO);
+
+  // MIGRATION: ULTRA + 0.0 Temp
+  const result = await gemini.generateContent(
+    fullPrompt,
+    GEMINI_MODELS.ULTRA,
+    undefined,
+    { temperature: 0.0 },
+  );
 
   return new Response(
-    JSON.stringify({ result, model: GEMINI_MODELS.PRO, mode }),
+    JSON.stringify({ result, model: GEMINI_MODELS.ULTRA, mode }),
     { headers: { "Content-Type": "application/json" } },
   );
 });

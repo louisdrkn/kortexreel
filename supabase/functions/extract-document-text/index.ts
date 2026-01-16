@@ -80,11 +80,65 @@ Deno.serve(async (req) => {
       extraction_status: extractedText ? "completed" : "failed",
     }).eq("id", documentId);
 
+    // 3. Vectorization (New Logic)
+    if (extractedText) {
+      try {
+        // Initialize Gemini
+        const { GeminiClient } = await import("../_shared/api-clients.ts");
+        const gemini = new GeminiClient(API_KEYS.GEMINI);
+
+        // Delete existing chunks for this doc (idempotency)
+        await supabase.from("company_document_chunks").delete().eq(
+          "document_id",
+          documentId,
+        );
+
+        // Simple Chunking Strategy (approx 1000 chars, overlap 100)
+        const chunkSize = 1000;
+        const overlap = 100;
+        const chunks: string[] = [];
+
+        for (let i = 0; i < extractedText.length; i += chunkSize - overlap) {
+          const chunk = extractedText.substring(i, i + chunkSize);
+          if (chunk.trim().length > 50) { // filter noise
+            chunks.push(chunk);
+          }
+        }
+
+        console.log(`Generating embeddings for ${chunks.length} chunks...`);
+
+        // Generate Embeddings & Store
+        // Note: Doing this sequentially to avoid rate limits on standard keys,
+        // parallelize if higher limits available.
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkContent = chunks[i];
+          try {
+            const embedding = await gemini.embedContent(chunkContent);
+
+            await supabase.from("company_document_chunks").insert({
+              document_id: documentId,
+              content: chunkContent,
+              embedding: embedding,
+              chunk_index: i,
+            });
+          } catch (embedError) {
+            console.error(`Embedding failed for chunk ${i}:`, embedError);
+            // Continue to next chunk - partial success is better than none
+          }
+        }
+        console.log("Vectorization completed.");
+      } catch (vecError) {
+        console.error("Vectorization fatal error:", vecError);
+        // Don't fail the whole request, just log it. The text is extracted still.
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         charCount: extractedText.length,
         extractedText,
+        vectorized: true,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

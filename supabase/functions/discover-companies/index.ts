@@ -1,6 +1,8 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
-import { repairJson } from "../_shared/json-repair.ts";
+import "@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "@supabase/supabase-js";
+
+import { GEMINI_MODELS, GeminiClient } from "../_shared/api-clients.ts";
+import { SYSTEM_INSTRUCTION as DRACONIAN_SYSTEM_INSTRUCTION } from "../_shared/prompts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,31 +16,48 @@ interface DiscoverRequest {
   strategy?: string;
 }
 
-// Helper for Gemini v1 Fetch
-async function callGeminiV1(apiKey: string, prompt: string, temperature = 0.3) {
-  const apiUrl =
-    `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+interface SynthesisResult {
+  unique_value_proposition?: string;
+  core_pain_point_solved?: string;
+  symptom_profile?: string;
+  ideal_prospect_description?: string;
+  exclusion_criteria?: string;
+  source_citation?: string;
+}
 
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: temperature,
-      },
-    }),
-  });
+// BATCH PROCESSING HELPER
+async function batchProcess<T, R>(
+  items: T[],
+  batchSize: number,
+  processFn: (item: T) => Promise<R>,
+  delayMs = 0,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    console.log(
+      `[BATCH] Processing items ${i + 1} to ${
+        Math.min(i + batchSize, items.length)
+      } of ${items.length}...`,
+    );
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("❌ GEMINI V1 FETCH FAILED:", response.status, errorText);
-    throw new Error(`Gemini V1 Error: ${response.status} ${errorText}`);
+    const batchResults = await Promise.all(
+      batch.map(async (item) => {
+        try {
+          return await processFn(item);
+        } catch (e) {
+          console.error(`[BATCH] Error processing item:`, e);
+          return null as unknown as R; // Handle individual failures gracefully
+        }
+      }),
+    );
+
+    results.push(...batchResults);
+    if (delayMs > 0 && i + batchSize < items.length) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
   }
-
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-  return text;
+  return results.filter((r) => r !== null && r !== undefined);
 }
 
 Deno.serve(async (req) => {
@@ -69,8 +88,21 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // --- FETCH PROJECT CONTEXT ---
-    console.log(`[DISCOVER] Fetching project context for ${projectId}...`);
+    // --- 1. FETCH GLOBAL CONTEXT (The "Brain") ---
+    console.log(`[DISCOVER] Fetching GLOBAL CONTEXT for ${projectId}...`);
+
+    // A. FETCH PROJECT OWNER & DATA
+    const { data: projectOwner, error: ownerError } = await supabase
+      .from("projects")
+      .select("user_id")
+      .eq("id", projectId)
+      .single();
+
+    if (ownerError || !projectOwner) {
+      throw new Error(`Failed to fetch project owner: ${ownerError?.message}`);
+    }
+    const userId = projectOwner.user_id;
+
     const { data: projectData, error: projectError } = await supabase
       .from("project_data")
       .select("data_type, data")
@@ -87,89 +119,60 @@ Deno.serve(async (req) => {
       d.data_type === "target_definition"
     )?.data || {};
 
-    console.log("DEBUG DNA:", {
-      agencyDNA_keys: Object.keys(agencyDNA),
-      pitch_preview: agencyDNA?.pitch
-        ? agencyDNA.pitch.substring(0, 20)
-        : "MISSING",
-      target_preview: targetDef?.targetDescription
-        ? targetDef.targetDescription.substring(0, 20)
-        : "MISSING",
-    });
+    // B. FETCH DOCUMENTS
+    const { data: documentsData, error: docsError } = await supabase
+      .from("company_documents")
+      .select("file_name, extracted_content")
+      .eq("project_id", projectId)
+      .eq("extraction_status", "completed");
 
-    if (!projectData || projectData.length === 0) {
-      console.warn("[DISCOVER] Project data not found.");
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error:
-            "Données du projet introuvables. Veuillez remplir le Cerveau Agence.",
-          code: "CONTEXT_MISSING",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    if (docsError) console.warn("Docs fetch warning:", docsError);
+
+    // C. CONSTITUTE FULL CONTEXT
+    const brainWebsiteContent = agencyDNA.extractedContent?.websiteContent ||
+      "";
+
+    const documentsContent = documentsData?.map((d) =>
+      `--- DOCUMENT: ${d.file_name} ---\n${
+        d.extracted_content?.substring(0, 500000)
+      }`
+    ).join("\n\n") || "";
+
+    const GlobalContext = `
+    === WEBSITE CONTENT (SOURCE OF TRUTH 1) ===
+    ${brainWebsiteContent.substring(0, 20000)}
+
+    === UPLOADED KNOWLEDGE BASE (SOURCE OF TRUTH 2 - CRITICAL) ===
+    ${documentsContent.substring(0, 100000)}
+
+    === AGENCY INPUTS (SECONDARY) ===
+    Pitch: ${agencyDNA.pitch || "Not provided"}
+    Methodology: ${agencyDNA.methodology || "Not provided"}
+    `;
+
+    // Check for Deep Context availability
+    if ((documentsContent.length + brainWebsiteContent.length) < 500) {
+      throw new Error(
+        "INSUFFICIENT_CONTEXT: Please upload Company Documents (PDFs) or ensure Website Content is scraped to enable Deep Context Radar.",
       );
     }
 
-    // OPTION B: FORCE PASS to unblock User
-    if (!agencyDNA?.pitch || agencyDNA.pitch.length < 10) {
+    console.log(
+      `[DISCOVER] Global Context Loaded. Size approx: ${GlobalContext.length} chars.`,
+    );
+
+    // PROOF OF LIFE
+    if (documentsContent.length > 0) {
+      console.log(
+        `[DISCOVER] 📄 DOCUMENTS LOADED (${documentsContent.length} chars)`,
+      );
+      console.log(
+        `[DISCOVER] 🔍 PREVIEW: ${documentsContent.substring(0, 200)}...`,
+      );
+    } else {
       console.warn(
-        "⚠️ VIOLATION: Pitch missing or too short, but forcing execution (Option B).",
+        `[DISCOVER] ⚠️ NO DOCUMENTS FOUND! Check Supabase 'company_documents' table.`,
       );
-      // Fallback or just proceed - Gemini might hallucinate if empty.
-    }
-    if (
-      !targetDef?.targetDescription || targetDef.targetDescription.length < 5
-    ) {
-      console.warn(
-        "⚠️ VIOLATION: Target missing or too short, but forcing execution (Option B).",
-      );
-    }
-
-    // --- 1. CACHE VERIFICATION ---
-    const targetQuery =
-      (targetDef?.targetDescription || "generic company search").toLowerCase()
-        .trim();
-    const signature = `${projectId}_${targetQuery.substring(0, 100)}`;
-
-    if (signature && !force_refresh) {
-      const { data: cachedProspects } = await supabase
-        .from("kortex_prospects")
-        .select("match_data")
-        .eq("query_signature", signature)
-        .limit(20);
-
-      if (cachedProspects && cachedProspects.length > 0) {
-        console.log("🚀 CACHE HIT: Prospects found in database!");
-
-        // NORMALIZE CACHED DATA (Legacy Support)
-        const normalizedCompanies = cachedProspects.map((p) => {
-          const d = p.match_data;
-          return {
-            name: d.name || d.company_name || "Entreprise Inconnue",
-            website: d.website || d.url || d.company_url || "",
-            score: d.score || d.match_score || 0,
-            reasoning: d.reasoning || d.why_match || d.match_explanation ||
-              "Correspondance détectée par IA (Cache)",
-            ...d,
-          };
-        });
-
-        const responsePayload = {
-          success: true,
-          companies: normalizedCompanies,
-          cached: true,
-        };
-
-        console.log(
-          "FINAL_BACKEND_OUTPUT (CACHE):",
-          JSON.stringify(responsePayload, null, 2),
-        );
-
-        return new Response(
-          JSON.stringify(responsePayload),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
     }
 
     // --- 2. CONFIGURATION ---
@@ -180,42 +183,144 @@ Deno.serve(async (req) => {
         "Missing Google API Key (GOOGLE_API_KEY or GEMINI_API_KEY)",
       );
     }
-
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
     if (!firecrawlKey) throw new Error("Missing FIRECRAWL_API_KEY");
 
-    // --- 3. THE COMMANDANT (Search Strategy) ---
-    console.log("🫡 COMMANDANT: Planning search strategy (via Fetch v1)...");
-    const strategyPrompt = `
-    [SYSTEM: KORTEX COMMANDER]
-    CONTEXT: You are "Expert Kortex", a master strategist.
-    INPUTS:
-    - PITCH: "${agencyDNA.pitch || "Not provided"}"
-    - TARGET: "${targetDef.targetDescription || "Generic Target"}"
-    - INDUSTRIES: "${(targetDef.industries || []).join(", ")}"
-    - STRATEGY HINT: "${strategy || "None"}"
+    const gemini = new GeminiClient(googleApiKey);
+
+    // --- 3. CACHE CHECK (LIGHT) ---
+    const targetQuery =
+      (targetDef?.targetDescription || "generic company search").toLowerCase()
+        .trim();
+
+    // --- 4. THE BRAIN: SYNTHESIS (Deep Analysis) ---
+    console.log("🧠 BRAIN: Synthesizing Solution Profile...");
+
+    const synthesisPrompt = `
+    [SYSTEM: KORTEX STRATEGIST]
+    You are the "Brain" of Kortex. You analyze vast amounts of unstructured company data to distill the PURE ESSENCE of their value.
     
-    MISSION: Generate 4 Google search queries to find COMPANIES matching this profile.
-    STRICT JSON OUTPUT: { "firecrawl_missions": ["Query 1", "Query 2", "Query 3", "Query 4"] }
+    === MISSION ===
+    1. IGNORE the "Pitch" and "Agency Inputs" if they contradict the Documents.
+    2. DERIVE the "Problematic" solely from the [UPLOADED KNOWLEDGE BASE] and [WEBSITE CONTENT].
+    3. FORCE CITATION: You must cite the exact file or section that defines the problem.
+
+    === INPUT: GLOBAL CONTEXT ===
+    ${GlobalContext}
+
+    OUTPUT JSON:
+    {
+        "unique_value_proposition": "The technical/methodological reason they win (Cite source)",
+        "core_pain_point_solved": "The specific bleeding problem their clients have",
+        "symptom_profile": "What does a prospect suffering from this look like? (e.g. specific job posts, tech stack, complaints, obsolete processes)",
+        "ideal_prospect_description": "A precise description of the perfect buyer",
+        "exclusion_criteria": "Who is NOT a client (e.g. competitors, too small)",
+        "source_citation": "Extract from documents proving this positioning"
+    }
     `;
 
-    const strategyRaw = await callGeminiV1(googleApiKey, strategyPrompt);
-    const strategyJson = repairJson<{ firecrawl_missions: string[] }>(
-      strategyRaw,
+    // MIGRATION: Use GeminiClient + ULTRA + 0.0 Temp + Draconian System Instruction
+    const synthesis = await gemini.generateJSON<SynthesisResult>(
+      synthesisPrompt,
+      GEMINI_MODELS.ULTRA,
+      DRACONIAN_SYSTEM_INSTRUCTION,
+      undefined,
+      { temperature: 0.0 },
     );
-    const missions = strategyJson?.firecrawl_missions || [];
+
+    console.log("🧠 SYNTHESIS RESULT:", JSON.stringify(synthesis, null, 2));
+
+    // --- 5. THE COMMANDANT: STRATEGIC COUNCIL (Generation & Critique) ---
+    console.log("🫡 COMMANDANT: Convening Strategic Council...");
+
+    // A. BRAINSTORMING PHASE
+    const strategyPrompt = `
+    [SYSTEM: KORTEX STRATEGIST - QUERY COMMANDER]
+    CONTEXT: You are "Expert Kortex".
+    GOAL: Find ALL NEW PROSPECTS based on the SOLUTION PROFILE below. DO NOT LIMIT YOURSELF.
+
+    === SOLUTION PROFILE (THE TRUTH) ===
+    Pain Point: ${synthesis.core_pain_point_solved || "Unknown Pain Point"}
+    Symptoms: ${synthesis.symptom_profile || "Unknown Symptoms"}
+    Ideal Prospect: ${
+      synthesis.ideal_prospect_description || "Unknown Prospect"
+    }
+    Exclusions: ${synthesis.exclusion_criteria || "None"}
+
+    TARGET DEFINITION: "${targetDef?.targetDescription || "N/A"}"
+    STRATEGY HINT: "${strategy || "None"}"
+
+    === MISSION ===
+    Generate 10 to 15 "Symptom-Hunting" Google search queries.
+    Do NOT search for "Companies looking for...".
+    Search for evidence of the PROBLEM existing.
+    
+    Examples of Good Queries:
+    - "Vieux site fait en [Techno] filetype:php" (Technical Debt)
+    - "Nous recrutons [Poste manquant] [Ville]" (Resource Gap)
+    - "Migrating from [Competitor] to" (Churn signal)
+    - "Complaint about [Process]" (Dissatisfaction)
+
+    OUTPUT JSON: { "candidate_queries": ["Query 1", ..., "Query 15"] }
+    `;
+
+    // MIGRATION: Use GeminiClient + ULTRA + 0.0 Temp
+    const candidateJson = await gemini.generateJSON<
+      { candidate_queries: string[] }
+    >(
+      strategyPrompt,
+      GEMINI_MODELS.ULTRA,
+      DRACONIAN_SYSTEM_INSTRUCTION, // Enforce language constraints even here
+      undefined,
+      { temperature: 0.0 },
+    );
+    const candidates = candidateJson?.candidate_queries || [];
+
+    // B. CRITIQUE & REFINEMENT PHASE
+    console.log(
+      `[COMMANDANT] Candidates generated: ${candidates.length}. Refining...`,
+    );
+
+    const refinementPrompt = `
+    [SYSTEM: KORTEX SNIPER]
+    You are a Search Logic Expert.
+    
+    INPUT: Candidate Queries
+    ${JSON.stringify(candidates)}
+
+    MISSION:
+    1. CRITIQUE each query: Is it too generic? Will it bring up SEO spam? Is it specific enough?
+    2. REWRITE the queries to be "Surgical". Use Boolean operators if needed (site:, "exact match", -keyword).
+    3. DISCARD queries that just search for "Top 10 agencies".
+    4. KEEP ALL queries that are relevant. Do NOT arbitrarily limit the list.
+    
+    GOAL: Only keep queries that will reveal a PROSPECT with a PROBLEM.
+
+    OUTPUT JSON: { "final_missions": ["Refined Query 1", "Refined Query 2", "Refined Query 3", ...] }
+    `;
+
+    // MIGRATION: Use GeminiClient + ULTRA + 0.0 Temp
+    const refinedJson = await gemini.generateJSON<{ final_missions: string[] }>(
+      refinementPrompt,
+      GEMINI_MODELS.ULTRA,
+      undefined, // No need for Draconian here, just Logic
+      undefined,
+      { temperature: 0.0 },
+    );
+    const missions = refinedJson?.final_missions || candidates;
 
     if (missions.length === 0) {
       throw new Error("AI failed to generate search queries.");
     }
     console.log(
-      `[COMMANDANT] Generated ${missions.length} missions:`,
+      `[COMMANDANT] 🎯 Final Surgical Missions (${missions.length}):`,
       missions,
     );
 
-    // --- 4. THE SWARM (Firecrawl Execution) ---
-    console.log("🐝 SWARM: Launching Firecrawl search...");
-    let allUrls: string[] = [];
+    // --- 6. THE SWARM: EXECUTION (DISCOVERY ONLY) ---
+    console.log("🐝 SWARM: Launching Firecrawl Search (PHASE 1 ONLY)...");
+
+    const allUrls: any[] = []; // Store basic info, not just URLs
 
     await Promise.all(missions.map(async (q: string) => {
       try {
@@ -225,172 +330,116 @@ Deno.serve(async (req) => {
             "Authorization": `Bearer ${firecrawlKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ query: q, limit: 5 }),
+          body: JSON.stringify({ query: q, limit: 20, lang: "fr" }),
         });
         if (searchResp.ok) {
-          const searchData = await searchResp.json();
-          if (searchData.success && searchData.data) {
-            searchData.data.forEach((item: any) => {
-              if (item.url) allUrls.push(item.url);
+          const d = await searchResp.json();
+          if (d.success && d.data) {
+            d.data.forEach((item: any) => {
+              if (
+                item.url && !item.url.includes("linkedin.com") &&
+                !item.url.includes("indeed.com")
+              ) {
+                allUrls.push({
+                  url: item.url,
+                  title: item.title,
+                  description: item.description,
+                  mission: q, // Track which query found it
+                });
+              }
             });
           }
         }
       } catch (e) {
-        console.error(`[SWARM] Search error for "${q}":`, e);
+        console.error(`[SWARM] Search error "${q}":`, e);
       }
     }));
 
-    const uniqueUrls = [...new Set(allUrls)]
-      .filter((u) =>
-        !u.includes("linkedin") && !u.includes("indeed") &&
-        !u.includes("facebook")
-      )
-      .slice(0, 3); // Limit to 3 for speed
+    // Deduplicate by URL
+    const seenUrls = new Set();
+    const uniqueDiscoveries = allUrls.filter((item) => {
+      const duplicate = seenUrls.has(item.url);
+      seenUrls.add(item.url);
+      return !duplicate;
+    });
 
-    if (uniqueUrls.length === 0) {
+    if (uniqueDiscoveries.length === 0) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "No company websites found.",
+          error: "No targets found.",
           code: "NO_RESULTS",
         }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        { headers: corsHeaders },
       );
     }
-
-    console.log(`[SWARM] Scraping ${uniqueUrls.length} sites...`);
-    const scrapeResults = await Promise.all(uniqueUrls.map(async (url) => {
-      try {
-        const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${firecrawlKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            url,
-            formats: ["markdown"],
-            onlyMainContent: true,
-            timeout: 30000,
-          }),
-        });
-        if (scrapeResp.ok) {
-          const d = await scrapeResp.json();
-          return { url, content: d.data?.markdown || "", status: "success" };
-        }
-        return { url, content: "", status: "failed" };
-      } catch (e) {
-        return { url, content: "", status: "failed" };
-      }
-    }));
-
-    const validSites = scrapeResults.filter((s) =>
-      s.status === "success" && s.content.length > 200
-    );
-
-    if (validSites.length === 0) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "Could not scrape websites.",
-          code: "SCRAPE_FAILED",
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    // --- 5. THE ANALYST (Validation & Scoring) ---
-    console.log(
-      `⚖️ ANALYST: Evaluating ${validSites.length} prospects (via Fetch v1)...`,
-    );
-    const sitesForAnalysis = validSites.map((site) => ({
-      url: site.url,
-      content: site.content.substring(0, 4000),
-    }));
-
-    const analysisPrompt = `
-    [SYSTEM: KORTEX ANALYST]
-    CONTEXT: Analyze these websites against the Agency DNA and Target Criteria.
-    AGENCY PITCH: "${agencyDNA.pitch || ""}"
-    TARGET: "${targetDef.targetDescription || ""}"
-    PROSPECTS: ${JSON.stringify(sitesForAnalysis)}
-    
-    MISSION: Filter and score. 0-100.
-    OUTPUT FORMAT (JSON Array): [{ "name": "...", "website": "...", "score": 0-100, "reasoning": "...", "pain_point_detected": "...", "evidence_snippet": "..." }]
-    `;
-
-    const analysisRaw = await callGeminiV1(googleApiKey, analysisPrompt);
-    console.log("RAW AI RESPONSE:", analysisRaw); // DEBUG
-
-    const validatedCompanies = repairJson<any[]>(analysisRaw) || [];
-
-    // MAPPING SAFEGUARD: Ensure keys match what Frontend expects (useRadar.ts)
-    // Frontend expects: name, website, score, reasoning
-    const mappedCompanies = validatedCompanies.map((c) => ({
-      name: c.name || c.company_name || "Entreprise Inconnue",
-      website: c.website || c.url || c.company_url || "",
-      score: c.score || c.match_score || 0,
-      reasoning: c.reasoning || c.why_match || c.match_explanation ||
-        "Correspondance détectée par IA",
-      pain_point_detected: c.pain_point_detected,
-      evidence_snippet: c.evidence_snippet,
-      // Keep original fields just in case
-      ...c,
-    }));
-
-    console.log("MAPPED COMPANIES:", JSON.stringify(mappedCompanies, null, 2));
 
     console.log(
-      `[ANALYST] Validated ${mappedCompanies.length} qualified prospects`,
+      `[SWARM] Discovered ${uniqueDiscoveries.length} potential targets.`,
     );
 
-    // --- 6. SAVE TO CACHE ---
-    if (mappedCompanies.length > 0 && signature) {
-      const validItems = mappedCompanies.filter((item: any) =>
-        item && typeof item.name === "string" &&
-        typeof item.score === "number"
-      );
-      if (validItems.length > 0) {
-        await supabase.from("kortex_prospects").insert(
-          validItems.map((item: any) => ({
-            query_signature: signature,
-            company_name: item.name,
-            website_url: item.website,
-            match_data: item,
-          })),
-        ).then(() => console.log("Cache updated."));
+    // --- 7. SAVE PHASE 1 RESULTS (DISCOVERED STATUS) ---
+    // Instead of deep scraping, we save them as "discovered"
+
+    await batchProcess(uniqueDiscoveries, 20, async (item: any) => {
+      const { data: existing } = await supabase.from("company_analyses")
+        .select("id").eq("project_id", projectId).eq(
+          "company_url",
+          item.url,
+        ).maybeSingle();
+
+      const payload = {
+        project_id: projectId,
+        user_id: userId,
+        company_name: item.title || "Unknown Company",
+        company_url: item.url,
+        match_score: 0, // Placeholder
+        match_explanation: `Discovered via query: ${item.mission}`,
+        detected_pain_points: [],
+        strategic_analysis:
+          `Initial discovery by Radar. awaiting Deep Analysis.\nSnippet: ${
+            item.description || "N/A"
+          }`,
+        analysis_status: "discovered", // PHASE 1 STATUS
+        analyzed_at: new Date().toISOString(),
+        buying_signals: [],
+        location: "Unknown",
+      };
+
+      if (existing) {
+        // Optional: Don't overwrite if already analyzed
+        // But if we are running discovery again, maybe we want to update?
+        // For now, let's only update if it's NOT 'completed' or 'deduced' to avoid wiping data
+        // Actually, 'discovered' should probably be the start state.
+        console.log(`[SKIP] Already exists: ${item.url}`);
+      } else {
+        await supabase.from("company_analyses").insert(payload);
       }
-    }
+      return item;
+    });
+
+    console.log(`✅ Saved ${uniqueDiscoveries.length} discovered prospects.`);
 
     const responsePayload = {
       success: true,
-      companies: mappedCompanies,
-      cached: false,
+      companies: uniqueDiscoveries.map((d) => ({
+        name: d.title,
+        website: d.url,
+        analysisStatus: "discovered",
+      })),
+      synthesis: synthesis,
       searchPhases: {
         queries: missions.length,
-        urls: allUrls.length,
-        scraped: validSites.length,
-        validated: validatedCompanies.length,
+        scraped: 0, // No scraping in Phase 1
+        validated: uniqueDiscoveries.length,
       },
     };
 
-    console.log(
-      "FINAL_BACKEND_OUTPUT:",
-      JSON.stringify(responsePayload, null, 2),
-    );
-
-    return new Response(
-      JSON.stringify(responsePayload),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify(responsePayload), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (error: any) {
-    console.error("[DISCOVER] FATAL ERROR:", error);
+    console.error("[DISCOVER] FATAL:", error);
     return new Response(
       JSON.stringify({
         success: false,
@@ -398,7 +447,7 @@ Deno.serve(async (req) => {
         code: "DISCOVER_FAIL",
       }),
       {
-        status: 200,
+        status: 200, // Client handles error parsing
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );

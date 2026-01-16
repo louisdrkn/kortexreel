@@ -239,9 +239,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
     try {
       // 2. Attempt Atomic DB Deletion via RPC
-      const { error: rpcError } = await supabase.rpc("delete_project_fully", {
-        target_project_id: id,
-      });
+      const { error: rpcError } = await supabase.rpc(
+        "delete_project_fully" as any,
+        {
+          target_project_id: id,
+        },
+      );
 
       if (rpcError) {
         console.warn(

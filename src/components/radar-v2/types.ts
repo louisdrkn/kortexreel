@@ -1,5 +1,13 @@
 // Types for the Radar V2 module
 
+export interface GoogleMapsData {
+  placeId: string;
+  url: string;
+  rating: number;
+  userRatingsTotal: number;
+  formattedAddress: string;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -10,9 +18,10 @@ export interface Company {
   headcount?: string;
   location?: string;
   score?: number;
-  status: 'hot' | 'warm' | 'cold' | 'detected';
+  status: "hot" | "warm" | "cold" | "detected";
   signals?: string[];
   tags?: string[];
+  googleMaps?: GoogleMapsData;
   // Deep analysis fields
   descriptionLong?: string;
   painPoints?: string[];
@@ -20,12 +29,23 @@ export interface Company {
   strategicAnalysis?: string;
   customHook?: string;
   matchExplanation?: string;
-  analysisStatus?: 'pending' | 'analyzing' | 'completed' | 'failed' | 'archived' | 'excluded' | 'validated' | 'buffer' | 'deduced' | 'enriched';
+  analysisStatus?:
+    | "pending"
+    | "analyzing"
+    | "completed"
+    | "failed"
+    | "archived"
+    | "excluded"
+    | "validated"
+    | "buffer"
+    | "deduced"
+    | "enriched"
+    | "discovered";
   analyzedAt?: string;
   // PRECISION ENGINE V3: Dual Contact Structure
-  decisionMaker?: DecisionMaker;           // 👑 Contact Principal
-  alternativeContact?: DecisionMaker;      // 🛡️ Alternative Suggérée
-  targetingAnalysis?: TargetingAnalysis;   // Analyse de ciblage
+  decisionMaker?: DecisionMaker; // 👑 Contact Principal
+  alternativeContact?: DecisionMaker; // 🛡️ Alternative Suggérée
+  targetingAnalysis?: TargetingAnalysis; // Analyse de ciblage
   // ZERO-DÉCHET: Match Origin badges
   validatedByCible?: boolean;
   validatedByCerveau?: boolean;
@@ -44,7 +64,7 @@ export interface DecisionMaker {
   // PRECISION ENGINE V3 fields
   matchScore?: number;
   matchReason?: string;
-  whyThisRole?: string;  // Tooltip explicatif stratégique
+  whyThisRole?: string; // Tooltip explicatif stratégique
   scoreBreakdown?: {
     titleMatch: number;
     tenureBonus: number;
@@ -67,7 +87,11 @@ export interface TargetingAnalysis {
 
 export interface SniperSearchPhases {
   phase1: { status: string; titles: string[] };
-  phase2: { status: string; candidatesFound: number; candidatesRejected: number };
+  phase2: {
+    status: string;
+    candidatesFound: number;
+    candidatesRejected: number;
+  };
   phase3: { status: string; scoredCandidates: number };
 }
 
@@ -83,7 +107,14 @@ export interface RadarState {
   isSheetOpen: boolean;
   isScanning: boolean;
   scanProgress: number;
-  scanStep: 'idle' | 'analyzing' | 'searching' | 'validating' | 'enriching' | 'complete' | 'error';
+  scanStep:
+    | "idle"
+    | "analyzing"
+    | "searching"
+    | "validating"
+    | "enriching"
+    | "complete"
+    | "error";
   error: string | null;
 }
 
@@ -101,8 +132,8 @@ export interface AnalysisResult {
 export interface FindDecisionMakerResult {
   success: boolean;
   // PRECISION ENGINE V3: Dual Contact Structure
-  primaryContact?: DecisionMaker;      // 👑 Contact Principal (Le Décideur)
-  alternativeContact?: DecisionMaker;  // 🛡️ Alternative Suggérée (Le Relais)
+  primaryContact?: DecisionMaker; // 👑 Contact Principal (Le Décideur)
+  alternativeContact?: DecisionMaker; // 🛡️ Alternative Suggérée (Le Relais)
   targetingAnalysis?: TargetingAnalysis;
   // Legacy compatibility
   decisionMaker?: DecisionMaker;

@@ -32,10 +32,27 @@ export function useRadar() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStep, setScanStep] = useState<
-    "idle" | "analyzing" | "searching" | "validating" | "complete" | "error"
+    | "idle"
+    | "analyzing"
+    | "reviewing"
+    | "searching"
+    | "validating"
+    | "complete"
+    | "error"
   >("idle");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzingCompanyId, setAnalyzingCompanyId] = useState<string | null>(
+    null,
+  );
   const [isFindingDecisionMaker, setIsFindingDecisionMaker] = useState(false);
+
+  // FORCE RESET LOCK: Prevents auto-refetching during "Hard Reset"
+  const [manualResetActive, setManualResetActive] = useState(false);
+
+  // New Double-Pass State
+  const [strategicIdentity, setStrategicIdentity] = useState<any>(null);
+  const [proposedStrategy, setProposedStrategy] = useState<any>(null);
+  const [isStrategizing, setIsStrategizing] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
 
   const scanChannelRef = useRef<any>(null);
 
@@ -105,6 +122,7 @@ export function useRadar() {
         let validatedByCible = false;
         let validatedByCerveau = false;
         let matchReason = row.match_explanation;
+        let googleMaps = undefined;
 
         if (row.custom_hook) {
           try {
@@ -162,6 +180,9 @@ export function useRadar() {
             if (hookData?.matchReason) {
               matchReason = hookData.matchReason;
             }
+            if (hookData?.googleMaps) {
+              googleMaps = hookData.googleMaps;
+            }
           } catch (e) {
             // Not JSON, ignore
           }
@@ -206,10 +227,11 @@ export function useRadar() {
           validatedByCible,
           validatedByCerveau,
           matchReason,
+          googleMaps,
         };
       }) as Company[];
     },
-    enabled: !!currentProject?.id,
+    enabled: !!currentProject?.id && !manualResetActive, // LOCK QUERY IF RESETTING
   });
 
   // Real-time subscription for company_analyses
@@ -227,9 +249,11 @@ export function useRadar() {
           filter: `project_id=eq.${currentProject.id}`,
         },
         () => {
-          queryClient.invalidateQueries({
-            queryKey: ["radar-companies", currentProject.id],
-          });
+          if (!manualResetActive) {
+            queryClient.invalidateQueries({
+              queryKey: ["radar-companies", currentProject.id],
+            });
+          }
         },
       )
       .subscribe();
@@ -277,174 +301,125 @@ export function useRadar() {
     return () => clearInterval(interval);
   }, [isScanning]);
 
-  // Scan market using the new 4-phase discovery engine
+  // --- PHASE 1: STRATEGIZE (The Brain) ---
+  const analyzeMarket = useCallback(async (forceRefresh = false) => {
+    if (!currentProject?.id) return;
+
+    setIsStrategizing(true);
+    setScanStep("analyzing");
+    setScanProgress(10);
+    setManualResetActive(false); // UNLOCK QUERY FOR NEW SCAN
+
+    try {
+      // Self-healing session
+      const currentSession = session;
+      if (!currentSession) throw new Error("Session expired");
+
+      console.log("[Radar] 🧠 Strategizing for project:", currentProject.id);
+
+      const { data, error } = await supabase.functions.invoke(
+        "strategize-radar",
+        {
+          body: { projectId: currentProject.id, force_analyze: forceRefresh },
+          headers: { Authorization: `Bearer ${currentSession.access_token}` },
+        },
+      );
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error);
+
+      console.log("🧠 STRATEGY RECEIVED:", data);
+
+      setStrategicIdentity(data.identity);
+      setProposedStrategy(data.strategy);
+      setScanStep("reviewing"); // Wait for user validation
+      setScanProgress(30);
+    } catch (err: any) {
+      console.error("[Radar] Strategy Error:", err);
+      setScanStep("error");
+      toast({
+        title: "Erreur Stratégique",
+        description: err.message || "Echec de l'analyse",
+        variant: "destructive",
+      });
+    } finally {
+      setIsStrategizing(false);
+    }
+  }, [currentProject?.id, session, toast]);
+
+  // --- PHASE 2: EXECUTE (The Muscle) ---
+  const executeStrategy = useCallback(async (approvedQueries?: string[]) => {
+    if (!currentProject?.id) return;
+
+    const queries = approvedQueries || proposedStrategy?.queries;
+    if (!queries || queries.length === 0) {
+      toast({
+        title: "Aucune stratégie",
+        description: "Veuillez relancer l'analyse.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsExecuting(true);
+    setScanStep("searching");
+    setScanProgress(40);
+
+    // Progress Simulation for the boring part
+    const progressInterval = setInterval(() => {
+      setScanProgress((p) => p < 80 ? p + 2 : p);
+    }, 500);
+
+    try {
+      const currentSession = session;
+      if (!currentSession) throw new Error("Session expired");
+
+      console.log("[Radar] ⚔️ Executing Strategy:", queries);
+
+      const { data, error } = await supabase.functions.invoke("execute-radar", {
+        body: { projectId: currentProject.id, approved_queries: queries },
+        headers: { Authorization: `Bearer ${currentSession.access_token}` },
+      });
+
+      clearInterval(progressInterval);
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error);
+
+      console.log("⚔️ EXECUTION RESULT:", data);
+
+      // Save DEDUCED companies (Frontend Logic mirrored from backend response for consistency if needed,
+      // but backend already upserted. usage of data.companies is for immediate UI update)
+
+      toast({
+        title: "Radar Terminé",
+        description: `${data.matches} nouvelles cibles détectées.`,
+      });
+
+      setScanStep("complete");
+      setScanProgress(100);
+      refetch();
+    } catch (err: any) {
+      clearInterval(progressInterval);
+      console.error("[Radar] Execution Error:", err);
+      setScanStep("error");
+      toast({
+        title: "Erreur d'Exécution",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsExecuting(false);
+    }
+  }, [currentProject?.id, session, proposedStrategy, toast, refetch]);
+
+  // Legacy Wrapper for compatibility (optional)
   const scanMarket = useCallback(
-    async (options?: { forceRefresh?: boolean; strategy?: string }) => {
-      /* OPEN CIRCUIT MODE: Project check disabled
-      if (!currentProject?.id) {
-        toast({
-          title: "Projet requis",
-          description:
-            "Veuillez sélectionner un projet avant de lancer la découverte",
-          variant: "destructive",
-        });
-        return;
-      }
-      */
-
-      if (scanChannelRef.current) {
-        supabase.removeChannel(scanChannelRef.current);
-        scanChannelRef.current = null;
-      }
-
-      // RESET EVERYTHING
-      setIsScanning(true);
-      setScanProgress(0);
-      setScanStep("analyzing");
-
-      try {
-        // Self-healing session retrieval
-        let currentSession = session;
-        /* OPEN CIRCUIT MODE: Session check disabled
-        if (!currentSession) {
-          toast({ title: "Session expirée", description: "Rechargement…" });
-          window.location.reload();
-          return;
-        }
-        */
-
-        // 0. RELAXED: We trust the AI to figure it out or the backend to handle defaults.
-        console.log(
-          "[Radar] Starting scan with context (Pre-flight check removed):",
-          projectContext,
-        );
-
-        const payload = {
-          projectId: currentProject.id,
-          force_refresh: options?.forceRefresh,
-          strategy: options?.strategy,
-          // AUDIT: Injecting project context for debugging
-          ...projectContext,
-        };
-
-        console.log(
-          "📝 [AUDIT INPUT] PAYLOAD TO BACKEND:",
-          JSON.stringify(payload, null, 2),
-        );
-
-        // DEEP REASONING CALL
-        const { data, error } = await supabase.functions.invoke(
-          "discover-companies",
-          {
-            body: payload,
-            headers: { Authorization: `Bearer ${currentSession.access_token}` },
-          },
-        );
-
-        if (error) throw error; // Network/Edge function crash
-
-        // HANDLE LOGIC ERRORS (400 Bad Request from missing context)
-        if (!data?.success) {
-          setIsScanning(false);
-          setScanProgress(0); // RESET ON ERROR
-
-          // DIAGNOSTIC CRASH TEST FEEDBACK
-          if (data?.code === "DIAGNOSTIC_FAIL") {
-            setScanStep("error");
-            toast({
-              title: "🚨 Échec du Diagnostic",
-              description: data.error +
-                (data.details ? `\n${data.details}` : ""),
-              variant: "destructive",
-              duration: 8000,
-            });
-            return;
-          }
-
-          throw new Error(data?.error || "Erreur inconnue");
-        }
-
-        // Save DEDUCED companies to database
-        if (data.companies && data.companies.length > 0) {
-          console.log("🔍 FRONTEND RECEIVED:", data.companies);
-
-          const companiesToInsert = data.companies.map((company: any) => ({
-            user_id: currentSession!.user.id,
-            project_id: currentProject.id,
-            company_name: company.name,
-            // FALLBACK: Generate unique URL to prevent upsert collision if website is missing
-            company_url: company.website ||
-              `missing-url-${crypto.randomUUID()}.com`,
-            match_score: company.score,
-            match_explanation: company.reasoning,
-            analysis_status: "deduced", // NEW STATUS
-            // We store the reasoning as the initial hook/source of truth
-            custom_hook: JSON.stringify({
-              validatedByCerveau: true,
-              matchReason: company.reasoning,
-              deducedAt: new Date().toISOString(),
-              originalWebsite: company.website || "Not Identified",
-            }),
-          }));
-
-          console.log("🔍 FRONTEND INSERTING:", companiesToInsert);
-
-          // BATCH INSERT instead of loop for atomicity and performance
-          const { error: insertError } = await supabase
-            .from("company_analyses")
-            .upsert(companiesToInsert, {
-              onConflict: "project_id,company_url",
-              ignoreDuplicates: true,
-            });
-
-          if (insertError) {
-            console.error("🚨 FRONTEND INSERT ERROR:", insertError);
-            toast({
-              title: "Erreur de sauvegarde",
-              description: "Impossible de sauvegarder les résultats: " +
-                insertError.message,
-              variant: "destructive",
-            });
-          } else {
-            console.log("✅ FRONTEND INSERT SUCCESS");
-          }
-
-          // IMMEDIATE FEEDBACK: Show them
-          toast({
-            title: "🧠 Analyse Stratégique Terminée",
-            description:
-              `${data.companies.length} cibles identifiées par déduction.`,
-          });
-
-          refetch();
-          triggerEnrichmentLoop(data.companies);
-        } else {
-          toast({
-            title: "Aucune cible déduite",
-            description:
-              "Le contexte ne permet pas de déduire des cibles précises.",
-            variant: "default",
-          });
-        }
-
-        setScanProgress(100);
-        setScanStep("complete");
-        setIsScanning(false);
-      } catch (error) {
-        console.error("[RADAR] Deep Reasoning error:", error);
-        setScanStep("error");
-        setScanProgress(0); // RESET ON ERROR
-        setIsScanning(false);
-        toast({
-          title: "Erreur de raisonnement",
-          description: error instanceof Error
-            ? error.message
-            : "Erreur inconnue",
-          variant: "destructive",
-        });
-      }
+    async (options?: { forceRefresh?: boolean }) => {
+      // For now, we redirect to analyzeMarket to start the flow
+      return analyzeMarket(options?.forceRefresh);
     },
-    [currentProject?.id, session, ensureSession, toast, refetch],
+    [analyzeMarket],
   );
 
   // Trigger Enrichment Loop for the deduced companies
@@ -509,25 +484,24 @@ export function useRadar() {
         return null;
       }
 
-      setIsAnalyzing(true);
+      setAnalyzingCompanyId(company.id);
 
       try {
         console.log("[RADAR] 🔍 Analyzing company:", company.name);
 
         const { data, error } = await supabase.functions.invoke(
-          "analyze-company-deep",
+          "analyze-single-company",
           {
             body: {
-              companyName: company.name,
-              companyUrl: company.website,
-              projectId: currentProject.id,
+              companyId: company.id, // Use ID, not name/url as primary key if possible, but function supports ID
             },
           },
         );
 
         if (error) throw error;
+        if (!data.success) throw new Error(data.error || "Analysis failed");
 
-        const analysis = data.analysis;
+        const analysis = data.data; // New format returns { success: true, data: { ...company } }
 
         // Feedback for Cache Hit (Optimistic UI)
         if (data.cached) {
@@ -543,7 +517,8 @@ export function useRadar() {
         if (selectedCompany?.id === company.id) {
           setSelectedCompany({
             ...selectedCompany,
-            descriptionLong: analysis.description_long,
+            descriptionLong: analysis.description_long ||
+              analysis.strategic_analysis, // Fallback
             painPoints: analysis.detected_pain_points || [],
             buyingSignals: analysis.buying_signals || [],
             strategicAnalysis: analysis.strategic_analysis,
@@ -551,7 +526,7 @@ export function useRadar() {
             matchExplanation: analysis.match_explanation,
             score: analysis.match_score,
             logoUrl: analysis.logo_url,
-            analysisStatus: "completed",
+            analysisStatus: "deduced", // Confirmed completed
           });
         }
 
@@ -578,7 +553,7 @@ export function useRadar() {
         });
         return null;
       } finally {
-        setIsAnalyzing(false);
+        setAnalyzingCompanyId(null);
       }
     },
     [currentProject?.id, selectedCompany, toast, refetch],
@@ -777,8 +752,16 @@ export function useRadar() {
     scanStep,
     scanMarket,
 
+    // New Double-Pass API
+    analyzeMarket,
+    executeStrategy,
+    strategicIdentity,
+    proposedStrategy,
+    isStrategizing,
+    isExecuting,
+
     // Analysis state
-    isAnalyzing,
+    analyzingCompanyId,
     analyzeCompany,
 
     // Decision maker state
@@ -817,6 +800,179 @@ export function useRadar() {
         title: "Carte Test Injectée",
         description: "Vérifiez si elle s'affiche.",
       });
+    },
+
+    // 🔄 RESET & REFINE: Purge data and reset state
+    resetRadar: async () => {
+      if (!currentProject?.id) {
+        console.error("No project selected for reset");
+        return;
+      }
+
+      try {
+        console.log("🔥 PURGING RADAR DATA FOR PROJECT:", currentProject.id);
+
+        // 1. Optimistic UI Reset (Immediate feedback)
+        queryClient.removeQueries({
+          queryKey: ["radar-companies", currentProject.id],
+        });
+        queryClient.setQueryData(["radar-companies", currentProject.id], []);
+        setIsScanning(false);
+        setIsExecuting(false);
+        setIsStrategizing(false);
+        setScanStep("idle");
+        setScanProgress(0);
+        setSelectedCompany(null);
+        setIsSheetOpen(false);
+        setStrategicIdentity(null);
+        setProposedStrategy(null);
+
+        // 2. Secure Hard Delete via Edge Function (Bypass RLS)
+        const session = await ensureSession();
+        if (!session) throw new Error("Authentication required");
+
+        const { data, error } = await supabase.functions.invoke("reset-radar", {
+          body: { projectId: currentProject.id },
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+
+        if (error) {
+          console.error("[useRadar] Invoke Error Details:", error);
+          throw new Error(
+            `Connection Error: ${error.message || "Unknown invoke error"}`,
+          );
+        }
+
+        if (!data) {
+          throw new Error("Empty response from Reset Function");
+        }
+
+        if (!data.success) {
+          throw new Error(
+            data.error || "Failed to execute Clean Slate protocol",
+          );
+        }
+
+        // 3. Force Refetch to ensure backend sync
+        await refetch();
+
+        toast({
+          title: "♻️ Clean Slate Activé",
+          description:
+            "Radar réinitialisé avec succès. Prêt pour un nouveau scan.",
+        });
+      } catch (e: any) {
+        console.error("Purge Error:", e);
+        toast({
+          title: "Erreur de réinitialisation",
+          description: e.message || "Impossible de vider le radar.",
+          variant: "destructive",
+        });
+      }
+    },
+
+    // ⚡ FORCE RELOAD: Immediate UI Reset (Bypassing Backend Wait)
+    forceReloadRadar: () => {
+      if (!currentProject?.id) return;
+
+      console.log("⚡ FORCE RELOAD TRIGGERED");
+
+      // 1. LOCK THE GATE
+      setManualResetActive(true);
+
+      // 2. Immediate UI State Reset
+      setScanStep("idle");
+      setIsScanning(false);
+      setIsExecuting(false);
+      setIsStrategizing(false);
+      setScanProgress(0);
+      setSelectedCompany(null);
+      setStrategicIdentity(null);
+
+      // 3. Nuke Cache
+      // We cancel queries first to stop any in-flight requests
+      queryClient.cancelQueries({
+        queryKey: ["radar-companies", currentProject.id],
+      });
+      queryClient.setQueryData(["radar-companies", currentProject.id], []);
+
+      toast({
+        title: "🔄 Radar Relancé",
+        description: "Interface réinitialisée. Prêt à scanner.",
+      });
+
+      // 3. Fire-and-forget backend cleanup (optional, best effort)
+      // We don't await this, so UI is instant
+      ensureSession().then((session) => {
+        if (session) {
+          supabase.functions.invoke("reset-radar", {
+            body: { projectId: currentProject.id },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }).catch((err) => console.error("Background reset failed:", err));
+        }
+      });
+    },
+
+    // 🆕 RECALIBRATE: Adjust strategy based on feedback
+    recalibrateRadar: async (forceFreshStart = false) => {
+      if (!currentProject?.id) {
+        toast({ title: "Projet manquant", variant: "destructive" });
+        return;
+      }
+
+      try {
+        toast({
+          title: "Recalibration...",
+          description: "Analyse de vos préférences en cours.",
+        });
+        setScanStep("analyzing");
+
+        const session = await ensureSession();
+        const { data, error } = await supabase.functions.invoke(
+          "recalibrate-radar",
+          {
+            body: {
+              projectId: currentProject.id,
+              userId: session?.user?.id,
+              force_fresh_start: forceFreshStart,
+            },
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+          },
+        );
+
+        if (error) throw error;
+        if (!data.success) throw new Error(data.error);
+
+        console.log("🧠 RECALIBRATION RESULT:", data);
+
+        // Updated learned insights notification
+        const insights = data.learnedInsights || [];
+        if (insights.length > 0) {
+          toast({
+            title: "Stratégie Ajustée",
+            description: insights[0], // Show top insight
+            duration: 4000,
+          });
+        }
+
+        // Force Cache Clear & Refresh
+        queryClient.removeQueries({
+          queryKey: ["radar-companies", currentProject.id],
+        });
+        await refetch();
+
+        // Force State Reset
+        setScanStep("idle");
+        setScanProgress(0);
+      } catch (e: any) {
+        console.error("Recalibration Error:", e);
+        toast({
+          title: "Echec de Recalibration",
+          description: e.message,
+          variant: "destructive",
+        });
+        setScanStep("idle");
+      }
     },
 
     // Utils
