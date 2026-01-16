@@ -39,10 +39,61 @@ export const corsHeaders = {
 };
 
 export const GEMINI_MODELS = {
-  PRO: "gemini-1.5-pro", // Stable High IQ
-  FLASH: "gemini-1.5-flash", // Fast & Cost Effective
-  ULTRA: "gemini-1.5-pro", // Using Pro for "Ultra" tier to ensure stability & high reasoning
+  PRO: "gemini-2.5-pro", // Stable High IQ
+  FLASH: "gemini-2.5-pro", // Fast & Cost Effective (Forced to 2.5 Pro)
+  ULTRA: "gemini-2.5-pro", // Using Pro for "Ultra" tier to ensure stability & high reasoning
 };
+
+// ============================================================================
+// LE TRIBUNAL IMPÉNÉTRABLE - BANNED LEXICON
+// ============================================================================
+const BANNED_WORDS = [
+  "leads",
+  "prospects",
+  "pipeline",
+  "funnel",
+  "tunnel de vente",
+  "saas",
+  "b2b",
+  "b2c",
+  "outbound",
+  "inbound",
+  "growth hacking",
+  "boost sales",
+  "improve roi",
+  "digital transformation",
+  "nouveaux contacts",
+  "opportunités commerciales",
+];
+
+/**
+ * LE TRIBUNAL - Validation de la fidélité sémantique
+ * Rejette toute réponse contenant du jargon marketing générique
+ */
+function validateTribunalCompliance(text: string): {
+  isValid: boolean;
+  score: number;
+  violations: string[];
+} {
+  const lowerText = text.toLowerCase();
+  const violations: string[] = [];
+
+  // Scan for banned words
+  for (const word of BANNED_WORDS) {
+    if (lowerText.includes(word)) {
+      violations.push(word);
+    }
+  }
+
+  // Calculate correlation score (100 = perfect, 0 = polluted)
+  const violationPenalty = violations.length * 15; // Each violation = -15 points
+  const score = Math.max(0, 100 - violationPenalty);
+
+  // Tribunal threshold: score must be > 65
+  const isValid = score > 65;
+
+  return { isValid, score, violations };
+}
 
 export class GeminiClient {
   private apiKey: string;
@@ -151,6 +202,39 @@ export class GeminiClient {
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (!text) throw new Error("No content generated");
+
+      // ============================================================================
+      // LE TRIBUNAL - VALIDATION DE SORTIE
+      // ============================================================================
+      const tribunalResult = validateTribunalCompliance(text);
+
+      if (!tribunalResult.isValid) {
+        console.error(
+          `[TRIBUNAL REJECTION] ⚖️ Response polluted by marketing jargon!`,
+        );
+        console.error(
+          `[TRIBUNAL] Score: ${tribunalResult.score}/100 (threshold: 65)`,
+        );
+        console.error(
+          `[TRIBUNAL] Violations detected: ${
+            tribunalResult.violations.join(", ")
+          }`,
+        );
+        console.error(
+          `[TRIBUNAL] Raw response preview: ${text.substring(0, 500)}...`,
+        );
+
+        throw new Error(
+          `TRIBUNAL REJECTION: Response contains banned words (${
+            tribunalResult.violations.join(", ")
+          }). Score: ${tribunalResult.score}/100. The AI must use proprietary lexicon from documents only.`,
+        );
+      }
+
+      // Log successful validation
+      console.log(
+        `[TRIBUNAL APPROVED] ✅ Response validated. Score: ${tribunalResult.score}/100`,
+      );
 
       // NEW: Use repairJson for robust parsing
       const parsed = repairJson<T>(text);

@@ -11,56 +11,87 @@ import {
 } from "../_shared/types.ts";
 
 const MISSION_PROMPT = `
-=== GOAL ===
-Become the "avatar" of the documents provided.
+=== MISSION: EXPERT DÉBRIDÉ - WAR MACHINE CONSTRUCTION ===
+Utilise le [GLOBAL_CONTEXT] (PDFs + Scrape) pour construire l'ADN de la War Machine de prospection.
 
 === INPUT CONTEXT ===
 {GLOBAL_CONTEXT}
 
-=== MISSION ===
-1. **CONSCIOUSNESS SUMMARY (The Proof of Integration)**:
-   - Identify 3 specific elements in the docs that CONTRADICT standard market advice.
-   - **REQUIRED FORMAT**: "Contradiction: [Specific Concept] found in [Source Doc Name] opposes standard [Generic Practice]."
+=== PHASE 0: EXTRACTION DE L'INTELLIGENCE ===
 
-2. **VERIFICATION (PROOF OF LIFE)**:
-   - Copy word-for-word the first sentence of the first paragraph of the very first document you see in the knowledge base.
-   - This proves you actually read the file.
+1. **SYNTHÈSE DE CONSCIENCE (Proof of Integration)** :
+   - Trouve 3 éléments dans les docs qui CONTREDISENT les pratiques marketing standard.
+   - **FORMAT REQUIS** : "Contradiction: [Concept Spécifique] trouvé dans [Nom du Doc Source] s'oppose à [Pratique Générique Standard]."
+   - **FAIL CONDITIONS** : Citations vagues ("dans le texte") → REJET. Usage de "B2B"/"SaaS" sans citation directe → REJET.
 
-2. **EXTRACT 3 STRATEGIC PILLARS**:
-   - Quote the exact methodology or proprietary concept from the text.
-   - Explain why this is a "Moat".
+2. **VÉRIFICATION (PROOF OF LIFE)** :
+   - Copie mot-à-mot la première phrase du premier paragraphe du tout premier document de la base de connaissances.
+   - Cela prouve que tu as réellement LU le fichier (pas d'hallucination).
 
-3. **PORTRAIT-ROBOT (The Perfect Fit)**:
-   - Who suffers from the absence of these 3 pillars?
-   - Define them using only the technical lexicon of the documents.
+3. **EXTRACTION DES 3 PILIERS STRATÉGIQUES (LE MOAT)** :
+   - Identifie les 3 concepts propriétaires qui rendent cette méthodologie IMPÉNÉTRABLE par la concurrence.
+   - **REQUIS** : Citation exacte de la méthodologie ou du concept propriétaire depuis le texte.
+   - **ANALYSE DU MOAT** : Explique pourquoi ce pilier crée une barrière à l'entrée (ex: "Nécessite 5 ans d'expertise en attribution multi-touch").
+   - **INTERDIT** : Concepts génériques comme "expertise", "innovation", "qualité de service" → trop vagues.
 
-=== FAIL CONDITIONS ===
-- Any usage of "B2B" or "SaaS" without direct citation -> **FAIL**.
-- Vague citations like "in the text" instead of specific document names -> **FAIL**.
+4. **PORTRAIT-ROBOT TECHNIQUE (The Perfect Fit)** :
+   - Qui souffre de l'ABSENCE de ces 3 piliers ?
+   - Définis-les UNIQUEMENT avec le lexique technique des documents (pas de jargon marketing).
+   - **EXEMPLE BON** : "Entreprises avec attribution multi-touch cassée générant des silos entre marketing et sales."
+   - **EXEMPLE MAUVAIS** : "PME innovantes cherchant à croître" → trop générique.
 
-=== OUTPUT JSON ===
+5. **IDENTIFICATION DES SYMPTÔMES TECHNIQUES (ANTI-PATTERNS)** :
+   - Selon la Section II des PDF (si présente), quels sont les 3 signaux d'erreurs RÉELS à traquer ?
+   - Ces symptômes doivent être :
+     * **OBSERVABLES** : Visibles dans le monde réel (ex: offres d'emploi, rapports annuels, avis Glassdoor).
+     * **MESURABLES** : Quantifiables (ex: "Turnover > 40% dans l'équipe data", "Budget marketing +30% mais ROI -15%").
+     * **TECHNIQUES** : Utilisant le lexique Axole/méthodologie, PAS du jargon marketing.
+   - **EXEMPLES D'ANTI-PATTERNS** :
+     * "Recrutement massif de 'Marketing Ops' pour compenser une attribution cassée"
+     * "Budgets publicitaires en hausse constante sans amélioration du CAC"
+     * "Silos organisationnels entre équipes marketing et sales (visible via organigramme LinkedIn)"
+
+=== FAIL CONDITIONS (TRIBUNAL IMPÉNÉTRABLE) ===
+- Usage de "B2B", "SaaS", "leads", "pipeline", "funnel" sans citation directe du document → **FAIL**.
+- Citations vagues ("dans le texte", "selon les docs") au lieu de noms de documents spécifiques → **FAIL**.
+- Symptômes non observables (ex: "manque de vision stratégique") → **FAIL** → Remplace par un signal mesurable.
+- Utilisation de jargon marketing générique au lieu du lexique propriétaire → **FAIL**.
+
+=== OUTPUT JSON STRUCTURE ===
 {
-  "verification_citation": "Exact quote from first document...",
+  "verification_citation": "Citation exacte mot-à-mot de la première phrase du premier document...",
   "consciousness_summary": [
-     "Contradiction 1: ... (Source: ...)",
-     "Contradiction 2: ... (Source: ...)",
-     "Contradiction 3: ... (Source: ...)"
+     "Contradiction 1: [Concept] trouvé dans [Doc X] s'oppose à [Pratique Standard]",
+     "Contradiction 2: ...",
+     "Contradiction 3: ..."
   ],
   "strategic_pillars": [
-    { "name": "Exact Term from Doc", "description": "Why it matters" },
+    { 
+      "name": "Terme Exact du Doc (ex: 'Attribution Unifiée Multi-Touch')", 
+      "description": "Analyse du MOAT: Pourquoi ce pilier est une barrière à l'entrée pour les concurrents"
+    },
     { "name": "...", "description": "..." },
     { "name": "...", "description": "..." }
   ],
-  "unique_value_proposition": "Synthesized Value Proposition based ONLY on the 3 Pillars.",
-  "core_pain_points": ["Pain linked to Pillar 1", "Pain linked to Pillar 2", ...],
-  "ideal_prospect_profile": "Detailed Portrait-Robot",
-  "exclusion_criteria": "Strict disqualifiers based on methodology compatibility",
+  "unique_value_proposition": "Proposition de valeur synthétisée basée UNIQUEMENT sur les 3 Piliers (pas de jargon marketing).",
+  "core_pain_points": [
+    "Douleur liée au Pilier 1 (technique, mesurable)", 
+    "Douleur liée au Pilier 2", 
+    "Douleur liée au Pilier 3"
+  ],
+  "ideal_prospect_profile": "Portrait-Robot détaillé utilisant UNIQUEMENT le lexique technique des documents",
+  "exclusion_criteria": "Critères stricts de disqualification basés sur la compatibilité méthodologique",
   "observable_symptoms": [
-     "Symptom 1 (Evidence of missing Pillar 1)", 
-     "Symptom 2 (Evidence of missing Pillar 2)",
-     "Symptom 3"
+     "Symptôme 1 (Anti-Pattern observable - Preuve de l'absence du Pilier 1)", 
+     "Symptôme 2 (Anti-Pattern mesurable - Preuve de l'absence du Pilier 2)",
+     "Symptôme 3 (Anti-Pattern technique)"
   ]
 }
+
+=== CRITICAL REMINDER ===
+Tu es un "Malade Mental" de la précision. Chaque mot compte. Chaque citation doit être sourcée. Chaque symptôme doit être observable dans le monde réel.
+Si tu ne peux pas sourcer un concept → Ne l'utilise pas.
+Si tu vois du jargon marketing → Remplace-le par le terme propriétaire du PDF.
 `;
 
 // ------------------------------------------------------------------
@@ -407,7 +438,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
       const identityJson = await gemini.generateJSON<StrategicIdentity>(
         finalMissionPrompt,
-        GEMINI_MODELS.FLASH, // UPGRADE: Using PRO for deeper reading comprehension
+        GEMINI_MODELS.PRO, // UPGRADE: Using PRO for deeper reading comprehension
         SYSTEM_INSTRUCTION, // System prompt separated
         undefined,
         { temperature: 0.0 }, // ABSOLUTE ZERO TEMPERATURE
@@ -441,7 +472,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
         project_id: projectId,
         unique_value_proposition: expertValueProp,
         core_pain_points: identityJson.core_pain_points,
-        symptom_profile: identityJson.symptom_profile, // This might need to match schema, assuming jsonb
         ideal_prospect_profile: identityJson.ideal_prospect_profile,
         exclusion_criteria: identityJson.exclusion_criteria,
         anti_patterns: identityJson.observable_symptoms || [],
@@ -469,8 +499,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const strategyJson = await gemini.generateJSON(
       finalStrategyPrompt,
-      GEMINI_MODELS.FLASH,
-      undefined,
+      GEMINI_MODELS.PRO,
+      SYSTEM_INSTRUCTION,
       undefined,
       { temperature: 0.5 },
     );

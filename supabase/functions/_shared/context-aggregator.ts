@@ -1,4 +1,4 @@
-import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AgencyDNA, TargetDefinition } from "./types.ts";
 
 export interface GlobalContext {

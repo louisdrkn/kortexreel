@@ -8,8 +8,7 @@
  * - Filtrage anti-bruit (gouv, médias, etc.)
  */
 
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import {
   API_KEYS,
   GEMINI_MODELS,
@@ -88,7 +87,7 @@ interface RecalibrationResult {
   mode: "expansion" | "pivot";
   modeReason: string;
   steps: RecalibrationStep[];
-  newCompanies: any[];
+  newCompanies: Company[];
   updatedScores: number;
   trendVector: string[];
   learnedInsights: string[];
@@ -100,11 +99,29 @@ interface RecalibrationResult {
   };
 }
 
+interface Company {
+  id?: string;
+  company_name: string;
+  industry?: string;
+  headcount?: string;
+  location?: string;
+  match_score?: number;
+  buying_signals?: string[];
+  analysis_status?: string;
+  company_url?: string;
+}
+
+interface LeadInteraction {
+  action: string;
+  duration_ms?: number;
+  company_analyses?: Company;
+}
+
 // ============================================================================
 // TABULA RASA: Clean excluded/noise companies from the pool
 // ============================================================================
 async function cleanNoiseCompanies(
-  supabase: any,
+  supabase: SupabaseClient,
   projectId: string,
 ): Promise<number> {
   let excludedCount = 0;
@@ -155,10 +172,17 @@ async function cleanNoiseCompanies(
 // ============================================================================
 // BRAIN PHASE: Strategic Analysis using AI
 // ============================================================================
+interface StrategicBrainResponse {
+  coreProblems: string[];
+  targetProfiles: string[];
+  targetSectors: string[];
+  nominativeSearchQueries: string[];
+}
+
 async function runStrategicBrain(
   agencyContext: string,
-  validatedCompanies: any[],
-  rejectedCompanies: any[],
+  validatedCompanies: Company[],
+  rejectedCompanies: Company[],
 ): Promise<{
   coreProblems: string[];
   targetProfiles: string[];
@@ -233,7 +257,7 @@ Réponds en JSON strict:
       "[RECALIBRATE] 🧠 Strategic Brain: Using Gemini 3.0 Pro (ULTRA)",
     );
 
-    const responseText = await gemini.generateJSON(
+    const responseText = await gemini.generateJSON<StrategicBrainResponse>(
       prompt,
       GEMINI_MODELS.ULTRA, // Utiliser ULTRA pour l'analyse stratégique critique
       "Tu es un expert en ciblage B2B. Réponds UNIQUEMENT en JSON valide.",
@@ -416,11 +440,11 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: false })
       .limit(100);
 
-    const validatedCompanies: any[] = [];
-    const rejectedCompanies: any[] = [];
-    const viewedCompanies: any[] = [];
+    const validatedCompanies: Company[] = [];
+    const rejectedCompanies: Company[] = [];
+    const viewedCompanies: Company[] = [];
 
-    (interactions || []).forEach((interaction: any) => {
+    (interactions || []).forEach((interaction: LeadInteraction) => {
       const company = interaction.company_analyses;
       if (!company) return;
 
@@ -432,7 +456,8 @@ Deno.serve(async (req) => {
       } else if (interaction.action === "rejected") {
         rejectedCompanies.push(company);
       } else if (
-        interaction.action === "viewed" && interaction.duration_ms > 30000
+        interaction.action === "viewed" &&
+        interaction.duration_ms !== undefined && interaction.duration_ms > 30000
       ) {
         viewedCompanies.push(company);
       }
@@ -472,7 +497,7 @@ Deno.serve(async (req) => {
       painPoints: {},
     };
 
-    [...validatedCompanies, ...viewedCompanies].forEach((company: any) => {
+    [...validatedCompanies, ...viewedCompanies].forEach((company: Company) => {
       const multiplier = validatedCompanies.includes(company) ? 2.0 : 0.5;
 
       if (company.industry) {
@@ -495,7 +520,7 @@ Deno.serve(async (req) => {
       }
     });
 
-    rejectedCompanies.forEach((company: any) => {
+    rejectedCompanies.forEach((company: Company) => {
       if (company.industry) {
         weights.sectors[company.industry] =
           (weights.sectors[company.industry] || 0) - 1.5;
@@ -695,7 +720,7 @@ Deno.serve(async (req) => {
     });
 
     const results = await Promise.all(updatePromises);
-    updatedScores = results.reduce((sum, val) => sum + val, 0);
+    updatedScores = results.reduce((sum: number, val) => sum + val, 0);
 
     // STEP 9: Complete
     steps.push({
