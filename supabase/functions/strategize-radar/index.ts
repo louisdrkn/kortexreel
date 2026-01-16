@@ -1,4 +1,6 @@
-import { createClient } from "jsr:@supabase/supabase-js@2";
+// 1. Utilisation d'URLs directes pour court-circuiter les erreurs de bundle Deno
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
+import { corsHeaders } from "../_shared/cors.ts";
 
 import { GEMINI_MODELS, GeminiClient } from "../_shared/api-clients.ts";
 import { SYSTEM_INSTRUCTION } from "../_shared/prompts.ts";
@@ -7,12 +9,6 @@ import {
   StrategicPillar,
   StrategizeRequest,
 } from "../_shared/types.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
 
 const MISSION_PROMPT = `
 === GOAL ===
@@ -71,28 +67,80 @@ Become the "avatar" of the documents provided.
 // PROMPT: THE SIGNAL COMMANDER (Query Generation)
 // ------------------------------------------------------------------
 const STRATEGY_PROMPT = `
-[SYSTEM: KORTEX SIGNAL COMMANDER]
-CONTEXT: We have the Master Expert Identity.
-GOAL: Generate high-precision Google Search Queries to detect the defined SIGNALS.
+[SYSTEM: KORTEX PRECISION SYNTHESIS ENGINE]
+MODE: DRACONIAN TRUTH - STRATEGIC VALIDATION
 
-=== STRATEGIC IDENTITY ===
+=== MISSION CRITICAL ===
+You are performing a PRECISION SYNTHESIS between two sources:
+- SOURCE A (BRAIN): Your extracted knowledge from Axole methodology PDFs (Section II: Technical Symptoms)
+- SOURCE B (TARGET): The specific company's strategic identity and pain points
+
+GOAL: Generate Strategic Validation for this specific target company.
+
+=== STRATEGIC IDENTITY (TARGET COMPANY) ===
 {IDENTITY_JSON}
 
-=== MISSION ===
-Generate 5 Google Search Queries.
-Constraint: Do NOT search for the solution. Search for the PROBLEM (Symptoms).
-UNLEASHED MODE: We need volume. Think broad but precise symptoms.
+=== SYNTHESIS PROTOCOL ===
 
-Examples:
-- "inurl:admin.php detected" OR "filetype:cfm"
-- "intitle:'We are hiring' AND 'Cobol developer'"
-- "site:trustpilot.com 'scam' AND [Competitor]"
+**1. VALUE PROPOSITION (Action-Oriented)**
+- Format: "[YOUR SPECIFIC SOLUTION] to [TARGET'S SPECIFIC PROBLEM]"
+- MUST mention your proprietary methodology by name (from Brain/PDFs)
+- MUST reference target's actual business context (from Identity)
+- FORBIDDEN: Generic phrases like "boost sales", "improve efficiency", "digital transformation"
+- REQUIRED: Technical precision using Axole lexicon
 
-=== OUTPUT JSON ===
+**2. CORE PAIN POINTS (3 Technical Symptoms)**
+- Extract from Section II of your knowledge base (Axole PDFs)
+- These are OBSERVABLE technical errors/failures, NOT business desires
+- Each symptom must be:
+  * Specific (e.g., "misaligned attribution models causing CAC inflation")
+  * Measurable (e.g., "conversion rate drops >40% at checkout")
+  * Technical (using Axole terminology, not marketing jargon)
+- Cross-reference with target's industry/profile to ensure relevance
+
+**3. NOMINATIVE SEARCH QUERIES (5 Google-Ready Queries)**
+- PURPOSE: Track companies displaying these technical symptoms
+- FORBIDDEN: Searching for "companies looking for solutions" or "leads interested in X"
+- REQUIRED: Search for ERROR MANIFESTATIONS using advanced operators
+
+Advanced Operator Requirements:
+- Use "intitle:", "inurl:", "filetype:", "site:", "intext:" operators
+- Target technical documentation, error logs, job postings, annual reports
+- Examples of PRECISION:
+  * "site:linkedin.com/company intitle:'hiring' 'attribution specialist' 'data discrepancies'"
+  * "filetype:pdf 'annual report' 'risk factors' 'customer acquisition costs' 'unsustainable'"
+  * "inurl:careers 'marketing operations' 'multi-touch attribution' 'broken'"
+  * "site:glassdoor.com 'marketing team' 'data silos' 'attribution chaos'"
+
+**4. DRACONIAN VALIDATION RULES**
+- If output contains "boost your sales" → FAIL
+- If output contains "improve ROI" without technical context → FAIL  
+- If output contains "B2B" or "SaaS" without direct citation from Brain → FAIL
+- If queries search for "solutions" instead of "symptoms" → FAIL
+- If lexicon is generic marketing (not Axole-specific) → FAIL
+
+=== OUTPUT JSON STRUCTURE ===
 {
-  "queries": ["Query 1", "Query 2", "Query 3", "Query 4", "Query 5"],
-  "rationale": "Brief explanation"
+  "value_proposition": "String - Action phrase with YOUR solution + TARGET problem",
+  "core_pain_points": [
+    "Technical Symptom 1 (from Section II, relevant to target)",
+    "Technical Symptom 2 (observable error/failure)",
+    "Technical Symptom 3 (measurable dysfunction)"
+  ],
+  "nominative_search_queries": [
+    "Advanced operator query 1 (tracking symptom manifestation)",
+    "Advanced operator query 2 (error evidence in public docs)",
+    "Advanced operator query 3 (job postings revealing gaps)",
+    "Advanced operator query 4 (annual reports/risk disclosures)",
+    "Advanced operator query 5 (employee reviews/glassdoor signals)"
+  ],
+  "synthesis_proof": "Brief explanation of how Brain knowledge was crossed with Target identity to generate these outputs"
 }
+
+=== CRITICAL REMINDER ===
+This is NOT lead generation. This is SYMPTOM DETECTION.
+You are a diagnostic radar, not a sales funnel.
+Use 100% Axole technical lexicon. Zero marketing fluff.
 `;
 
 // Helper: Scrape Client Site if missing context
@@ -125,15 +173,15 @@ async function scrapeClientSite(url: string, apiKey: string) {
   return "";
 }
 
-console.log("[STRATEGIZE] 🚀 Function script loaded!");
-
+// 2. Signature de fonction conforme au mode Strict pour éviter le crash au boot
 Deno.serve(async (req: Request): Promise<Response> => {
-  // 0. CORS - Handle immediate for OPTIONS
+  // Gestion immédiate du CORS pour l'interface Radar
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
+    console.log("[STRATEGIZE] 🚀 Function script loaded!");
     console.log(`[STRATEGIZE] 🟢 Request received: ${req.method} ${req.url}`);
 
     // 1. Parsing Body
@@ -173,7 +221,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       throw new Error(`Failed to fetch project data: ${projectError.message}`);
     }
 
-    const agencyDNA = (projectData?.find((d) =>
+    const agencyDNA = (projectData?.find((d: any) =>
       d.data_type === "agency_dna"
     )?.data as any) || {};
 
@@ -245,7 +293,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         /--- DOCUMENT: .+ ---/g,
       );
       if (docHeaders) {
-        docHeaders.forEach((header) =>
+        docHeaders.forEach((header: string) =>
           console.log(`[DIAGNOSTIC]   ✅ Found: ${header}`)
         );
       } else {
@@ -275,7 +323,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         identity = existing as StrategicIdentity;
       }
     }
- 
+
     // 4. Generate Identity if needed
     const googleApiKey = Deno.env.get("GOOGLE_API_KEY") ||
       Deno.env.get("GEMINI_API_KEY")!;
@@ -406,7 +454,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .select()
         .single();
 
-      if (saveErr) console.error("Identity Save Error:", saveErr);
+      if (saveErr) {
+        console.error("Identity Save Error:", saveErr);
+      }
       identity = saved || identityJson;
     }
 
