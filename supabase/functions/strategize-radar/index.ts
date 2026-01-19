@@ -1,15 +1,86 @@
-// 1. Utilisation d'URLs directes pour court-circuiter les erreurs de bundle Deno
+// ============================================================================
+// IMPORTS STANDARDS (NE JAMAIS CHANGER)
+// ============================================================================
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
-import { corsHeaders } from "../_shared/cors.ts";
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
 
-import { GEMINI_MODELS, GeminiClient } from "../_shared/api-clients.ts";
-import { SYSTEM_INSTRUCTION } from "../_shared/prompts.ts";
-import {
-  StrategicIdentity,
-  StrategicPillar,
-  StrategizeRequest,
-} from "../_shared/types.ts";
+// ============================================================================
+// CORS UNIVERSEL (Le "Passe-Partout")
+// ============================================================================
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
 
+// ============================================================================
+// TYPES & INTERFACES
+// ============================================================================
+interface StrategizeRequest {
+  projectId: string;
+  force_analyze?: boolean;
+}
+
+interface StrategicIdentity {
+  verification_citation?: string;
+  consciousness_summary?: string[];
+  strategic_pillars?: StrategicPillar[];
+  unique_value_proposition?: string;
+  core_pain_points?: string[];
+  ideal_prospect_profile?: string;
+  exclusion_criteria?: string;
+  observable_symptoms?: string[];
+}
+
+interface StrategicPillar {
+  name: string;
+  description: string;
+}
+
+interface ProjectDataRow {
+  data_type: string;
+  data: Record<string, unknown>;
+}
+
+interface AgencyDNA {
+  companyName?: string;
+  website?: string;
+  pitch?: string;
+  methodology?: string;
+  extractedContent?: {
+    websiteContent?: string;
+  };
+}
+
+interface DocumentRow {
+  file_name: string;
+  extracted_content?: string;
+}
+
+// ============================================================================
+// CONSTANTS - GEMINI MODEL
+// ============================================================================
+const GEMINI_MODEL = "gemini-2.0-flash-exp";
+
+// ============================================================================
+// SYSTEM INSTRUCTION (Draconian Truth Mode)
+// ============================================================================
+const SYSTEM_INSTRUCTION = `
+You are KORTEX, the Strategic Brain of Axole.
+Your mission is to extract TRUTH from documents and synthesize actionable intelligence.
+
+CRITICAL RULES:
+1. NEVER invent information not present in the source documents
+2. ALWAYS cite exact quotes when making claims
+3. REJECT generic B2B marketing jargon
+4. USE technical lexicon from the provided PDFs
+5. OUTPUT ONLY VALID JSON - NO preamble, NO explanation
+`;
+
+// ============================================================================
+// PROMPTS
+// ============================================================================
 const MISSION_PROMPT = `
 === MISSION: EXPERT DÉBRIDÉ - WAR MACHINE CONSTRUCTION ===
 Utilise le [GLOBAL_CONTEXT] (PDFs + Scrape) pour construire l'ADN de la War Machine de prospection.
@@ -21,41 +92,23 @@ Utilise le [GLOBAL_CONTEXT] (PDFs + Scrape) pour construire l'ADN de la War Mach
 
 1. **SYNTHÈSE DE CONSCIENCE (Proof of Integration)** :
    - Trouve 3 éléments dans les docs qui CONTREDISENT les pratiques marketing standard.
-   - **FORMAT REQUIS** : "Contradiction: [Concept Spécifique] trouvé dans [Nom du Doc Source] s'oppose à [Pratique Générique Standard]."
-   - **FAIL CONDITIONS** : Citations vagues ("dans le texte") → REJET. Usage de "B2B"/"SaaS" sans citation directe → REJET.
+   - Format : "Contradiction: [Concept Spécifique] trouvé dans [Nom du Doc Source] s'oppose à [Pratique Générique Standard]."
 
 2. **VÉRIFICATION (PROOF OF LIFE)** :
    - Copie mot-à-mot la première phrase du premier paragraphe du tout premier document de la base de connaissances.
-   - Cela prouve que tu as réellement LU le fichier (pas d'hallucination).
 
 3. **EXTRACTION DES 3 PILIERS STRATÉGIQUES (LE MOAT)** :
    - Identifie les 3 concepts propriétaires qui rendent cette méthodologie IMPÉNÉTRABLE par la concurrence.
-   - **REQUIS** : Citation exacte de la méthodologie ou du concept propriétaire depuis le texte.
-   - **ANALYSE DU MOAT** : Explique pourquoi ce pilier crée une barrière à l'entrée (ex: "Nécessite 5 ans d'expertise en attribution multi-touch").
-   - **INTERDIT** : Concepts génériques comme "expertise", "innovation", "qualité de service" → trop vagues.
+   - Citation exacte de la méthodologie ou du concept propriétaire depuis le texte.
+   - Explique pourquoi ce pilier crée une barrière à l'entrée.
 
 4. **PORTRAIT-ROBOT TECHNIQUE (The Perfect Fit)** :
    - Qui souffre de l'ABSENCE de ces 3 piliers ?
-   - Définis-les UNIQUEMENT avec le lexique technique des documents (pas de jargon marketing).
-   - **EXEMPLE BON** : "Entreprises avec attribution multi-touch cassée générant des silos entre marketing et sales."
-   - **EXEMPLE MAUVAIS** : "PME innovantes cherchant à croître" → trop générique.
+   - Définis-les avec le lexique technique des documents.
 
 5. **IDENTIFICATION DES SYMPTÔMES TECHNIQUES (ANTI-PATTERNS)** :
    - Selon la Section II des PDF (si présente), quels sont les 3 signaux d'erreurs RÉELS à traquer ?
-   - Ces symptômes doivent être :
-     * **OBSERVABLES** : Visibles dans le monde réel (ex: offres d'emploi, rapports annuels, avis Glassdoor).
-     * **MESURABLES** : Quantifiables (ex: "Turnover > 40% dans l'équipe data", "Budget marketing +30% mais ROI -15%").
-     * **TECHNIQUES** : Utilisant le lexique Axole/méthodologie, PAS du jargon marketing.
-   - **EXEMPLES D'ANTI-PATTERNS** :
-     * "Recrutement massif de 'Marketing Ops' pour compenser une attribution cassée"
-     * "Budgets publicitaires en hausse constante sans amélioration du CAC"
-     * "Silos organisationnels entre équipes marketing et sales (visible via organigramme LinkedIn)"
-
-=== FAIL CONDITIONS (TRIBUNAL IMPÉNÉTRABLE) ===
-- Usage de "B2B", "SaaS", "leads", "pipeline", "funnel" sans citation directe du document → **FAIL**.
-- Citations vagues ("dans le texte", "selon les docs") au lieu de noms de documents spécifiques → **FAIL**.
-- Symptômes non observables (ex: "manque de vision stratégique") → **FAIL** → Remplace par un signal mesurable.
-- Utilisation de jargon marketing générique au lieu du lexique propriétaire → **FAIL**.
+   - Ces symptômes doivent être observables, mesurables et techniques.
 
 === OUTPUT JSON STRUCTURE ===
 {
@@ -67,119 +120,149 @@ Utilise le [GLOBAL_CONTEXT] (PDFs + Scrape) pour construire l'ADN de la War Mach
   ],
   "strategic_pillars": [
     { 
-      "name": "Terme Exact du Doc (ex: 'Attribution Unifiée Multi-Touch')", 
-      "description": "Analyse du MOAT: Pourquoi ce pilier est une barrière à l'entrée pour les concurrents"
+      "name": "Terme Exact du Doc", 
+      "description": "Analyse du MOAT: Pourquoi ce pilier est une barrière à l'entrée"
     },
     { "name": "...", "description": "..." },
     { "name": "...", "description": "..." }
   ],
-  "unique_value_proposition": "Proposition de valeur synthétisée basée UNIQUEMENT sur les 3 Piliers (pas de jargon marketing).",
+  "unique_value_proposition": "Proposition de valeur synthétisée basée sur les 3 Piliers.",
   "core_pain_points": [
-    "Douleur liée au Pilier 1 (technique, mesurable)", 
+    "Douleur liée au Pilier 1", 
     "Douleur liée au Pilier 2", 
     "Douleur liée au Pilier 3"
   ],
-  "ideal_prospect_profile": "Portrait-Robot détaillé utilisant UNIQUEMENT le lexique technique des documents",
-  "exclusion_criteria": "Critères stricts de disqualification basés sur la compatibilité méthodologique",
+  "ideal_prospect_profile": "Portrait-Robot détaillé utilisant le lexique technique des documents",
+  "exclusion_criteria": "Critères de disqualification basés sur la compatibilité méthodologique",
   "observable_symptoms": [
-     "Symptôme 1 (Anti-Pattern observable - Preuve de l'absence du Pilier 1)", 
-     "Symptôme 2 (Anti-Pattern mesurable - Preuve de l'absence du Pilier 2)",
+     "Symptôme 1 (Anti-Pattern observable)", 
+     "Symptôme 2 (Anti-Pattern mesurable)",
      "Symptôme 3 (Anti-Pattern technique)"
   ]
 }
 
-=== CRITICAL REMINDER ===
-Tu es un "Malade Mental" de la précision. Chaque mot compte. Chaque citation doit être sourcée. Chaque symptôme doit être observable dans le monde réel.
-Si tu ne peux pas sourcer un concept → Ne l'utilise pas.
-Si tu vois du jargon marketing → Remplace-le par le terme propriétaire du PDF.
+=== CRITICAL FORMATTING RULES (DO NOT IGNORE) ===
+FOR THE FIELD 'unique_value_proposition':
+
+STRICTLY FORBIDDEN: You must NEVER start with "🧠", "CONSCIOUSNESS SUMMARY", "Analysis", or "Source:".
+
+STRICTLY FORBIDDEN: Do not explain how you found the answer. Do not cite the PDF sections.
+
+STRICTLY FORBIDDEN: Do not include the consciousness_summary content in this field.
+
+REQUIRED FORMAT: Output ONLY the final client-facing marketing pitch.
+
+LENGTH LIMIT: Maximum 2 powerful sentences.
+
+Example of BAD output: "🧠 Analysis: The PDF mentions X, so we should do Y..."
+Example of GOOD output: "Nous transformons votre cycle de vente imprévisible en une machine d'acquisition systémique qui cible exclusivement les décideurs."
 `;
 
-// ------------------------------------------------------------------
-// PROMPT: THE SIGNAL COMMANDER (Query Generation)
-// ------------------------------------------------------------------
 const STRATEGY_PROMPT = `
-[SYSTEM: KORTEX PRECISION SYNTHESIS ENGINE]
-MODE: DRACONIAN TRUTH - STRATEGIC VALIDATION
+[SYSTEM: KORTEX STRATÈGE SENIOR AXOLE]
+MODE: GÉNÉRATION DE STRATÉGIE DE PROSPECTION B2B
 
-=== MISSION CRITICAL ===
-You are performing a PRECISION SYNTHESIS between two sources:
-- SOURCE A (BRAIN): Your extracted knowledge from Axole methodology PDFs (Section II: Technical Symptoms)
-- SOURCE B (TARGET): The specific company's strategic identity and pain points
-
-GOAL: Generate Strategic Validation for this specific target company.
+=== RÔLE ===
+Tu es le Stratège Senior Axole. Ton but est de générer une stratégie de prospection pour cibler des DÉCIDEURS et des ENTREPRISES, pas des exécutants ni des offres d'emploi.
 
 === STRATEGIC IDENTITY (TARGET COMPANY) ===
 {IDENTITY_JSON}
 
-=== SYNTHESIS PROTOCOL ===
+=== RÈGLES LOGIQUES STRICTES ===
 
-**1. VALUE PROPOSITION (Action-Oriented)**
-- Format: "[YOUR SPECIFIC SOLUTION] to [TARGET'S SPECIFIC PROBLEM]"
-- MUST mention your proprietary methodology by name (from Brain/PDFs)
-- MUST reference target's actual business context (from Identity)
-- FORBIDDEN: Generic phrases like "boost sales", "improve efficiency", "digital transformation"
-- REQUIRED: Technical precision using Axole lexicon
+**RÈGLE 1 : CIBLAGE (Plan de Chasse - queries)**
 
-**2. CORE PAIN POINTS (3 Technical Symptoms)**
-- Extract from Section II of your knowledge base (Axole PDFs)
-- These are OBSERVABLE technical errors/failures, NOT business desires
-- Each symptom must be:
-  * Specific (e.g., "misaligned attribution models causing CAC inflation")
-  * Measurable (e.g., "conversion rate drops >40% at checkout")
-  * Technical (using Axole terminology, not marketing jargon)
-- Cross-reference with target's industry/profile to ensure relevance
+INTERDIT ABSOLU : Les termes suivants sont BANNIS de toutes les requêtes :
+- "Glassdoor"
+- "Indeed"
+- "Recrutement"
+- "Offre d'emploi"
+- "Candidat"
+- "Business Developer"
+- "Sales Representative"
+- "Poste à pourvoir"
+- Tout terme lié aux RH ou à l'emploi
 
-**3. NOMINATIVE SEARCH QUERIES (5 Google-Ready Queries)**
-- PURPOSE: Track companies displaying these technical symptoms
-- FORBIDDEN: Searching for "companies looking for solutions" or "leads interested in X"
-- REQUIRED: Search for ERROR MANIFESTATIONS using advanced operators
+OBLIGATOIRE : Cible les TITRES DE DÉCISION uniquement :
+- CEO, Founder, Co-Founder
+- DG, Directeur Général
+- VP Sales, VP Marketing, VP Operations
+- Directeur Industriel, Directeur Commercial
+- C-Level executives
 
-Advanced Operator Requirements:
-- Use "intitle:", "inurl:", "filetype:", "site:", "intext:" operators
-- Target technical documentation, error logs, job postings, annual reports
-- Examples of PRECISION:
-  * "site:linkedin.com/company intitle:'hiring' 'attribution specialist' 'data discrepancies'"
-  * "filetype:pdf 'annual report' 'risk factors' 'customer acquisition costs' 'unsustainable'"
-  * "inurl:careers 'marketing operations' 'multi-touch attribution' 'broken'"
-  * "site:glassdoor.com 'marketing team' 'data silos' 'attribution chaos'"
+STRUCTURE DES REQUÊTES : Utilise des opérateurs Google précis pour trouver des ENTREPRISES et des DÉCIDEURS.
 
-**4. DRACONIAN VALIDATION RULES**
-- If output contains "boost your sales" → FAIL
-- If output contains "improve ROI" without technical context → FAIL  
-- If output contains "B2B" or "SaaS" without direct citation from Brain → FAIL
-- If queries search for "solutions" instead of "symptoms" → FAIL
-- If lexicon is generic marketing (not Axole-specific) → FAIL
+FORMAT CORRECT (exemples de structure) :
+- site:linkedin.com/in/ intitle:"CEO" AND "secteur du client"
+- site:societe.com "secteur activité" AND "chiffre d'affaires"
+- site:linkedin.com/company/ "industrie cible" AND "nombre employés"
+- "Directeur Général" AND "secteur" AND "problème identifié"
+- intitle:"Founder" site:crunchbase.com "industrie"
+
+OBJECTIF : Trouve des ENTREPRISES qui correspondent au profil, pas des avis d'employés ou des offres d'emploi.
+
+**RÈGLE 2 : DOULEUR (Pain Points)**
+
+EXTRACTION : Extrais les problèmes structurels du PDF uniquement.
+
+EXEMPLES DE BONNES DOULEURS :
+- "Perte de marge opérationnelle"
+- "Processus manuel inefficace"
+- "Dépendance à des systèmes obsolètes"
+- "Fragmentation des données"
+
+INTERDIT : Douleurs génériques comme "manque de temps", "besoin de croissance", "recherche de talents".
+
+FORMAT : Chaque pain point doit être un problème observable et mesurable que le PDF dénonce explicitement.
+
+**RÈGLE 3 : SORTIE (Value Proposition)**
+
+INTERDIT : Pas de méta-commentaires internes (Consciousness Summary, Analysis, Source, etc.).
+
+FORMAT OBLIGATOIRE : Une phrase choc structurée ainsi :
+"Nous aidons [CIBLE PRÉCISE] à [RÉSULTAT MESURABLE] en supprimant [DOULEUR SPÉCIFIQUE]."
+
+VOCABULAIRE : Utilise uniquement les termes techniques présents dans les PDF Axole.
 
 === OUTPUT JSON STRUCTURE ===
 {
-  "value_proposition": "String - Action phrase with YOUR solution + TARGET problem",
+  "value_proposition": "Phrase choc sans méta-commentaire",
   "core_pain_points": [
-    "Technical Symptom 1 (from Section II, relevant to target)",
-    "Technical Symptom 2 (observable error/failure)",
-    "Technical Symptom 3 (measurable dysfunction)"
+    "Problème structurel 1 extrait du PDF",
+    "Problème structurel 2 extrait du PDF",
+    "Problème structurel 3 extrait du PDF"
   ],
-  "nominative_search_queries": [
-    "Advanced operator query 1 (tracking symptom manifestation)",
-    "Advanced operator query 2 (error evidence in public docs)",
-    "Advanced operator query 3 (job postings revealing gaps)",
-    "Advanced operator query 4 (annual reports/risk disclosures)",
-    "Advanced operator query 5 (employee reviews/glassdoor signals)"
+  "queries": [
+    "Requête 1 ciblant entreprises/décideurs (pas de job boards)",
+    "Requête 2 ciblant entreprises/décideurs (pas de job boards)",
+    "Requête 3 ciblant entreprises/décideurs (pas de job boards)",
+    "Requête 4 ciblant entreprises/décideurs (pas de job boards)",
+    "Requête 5 ciblant entreprises/décideurs (pas de job boards)"
   ],
-  "synthesis_proof": "Brief explanation of how Brain knowledge was crossed with Target identity to generate these outputs"
+  "synthesis_proof": "Explication de la synthèse entre PDF et Identity"
 }
 
-=== CRITICAL REMINDER ===
-This is NOT lead generation. This is SYMPTOM DETECTION.
-You are a diagnostic radar, not a sales funnel.
-Use 100% Axole technical lexicon. Zero marketing fluff.
+=== CRITICAL FORMATTING RULES (DO NOT IGNORE) ===
+FOR THE FIELD 'unique_value_proposition':
+
+STRICTLY FORBIDDEN: You must NEVER start with "🧠", "CONSCIOUSNESS SUMMARY", "Analysis", or "Source:".
+
+STRICTLY FORBIDDEN: Do not explain how you found the answer. Do not cite the PDF sections.
+
+REQUIRED FORMAT: Output ONLY the final client-facing marketing pitch.
+
+LENGTH LIMIT: Maximum 2 powerful sentences.
+
+Example of BAD output: "🧠 Analysis: The PDF mentions X, so we should do Y..."
+Example of GOOD output: "Nous transformons votre cycle de vente imprévisible en une machine d'acquisition systémique qui cible exclusivement les décideurs."
 `;
 
-// Helper: Scrape Client Site if missing context
-async function scrapeClientSite(url: string, apiKey: string) {
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+async function scrapeClientSite(url: string, apiKey: string): Promise<string> {
   if (!url || !apiKey) return "";
-  console.log(
-    `[STRATEGIZE] 🕵️ Unidentified Logic: Scraping client site ${url} for Realism...`,
-  );
+  console.log(`[STRATEGIZE] 🕵️ Scraping client site ${url}...`);
   try {
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
@@ -199,49 +282,80 @@ async function scrapeClientSite(url: string, apiKey: string) {
       return data.data?.markdown || "";
     }
   } catch (e) {
-    console.error("Scrape failed or timed out:", e);
+    console.error("Scrape failed:", e);
   }
   return "";
 }
 
-// 2. Signature de fonction conforme au mode Strict pour éviter le crash au boot
-Deno.serve(async (req: Request): Promise<Response> => {
-  // Gestion immédiate du CORS pour l'interface Radar
+async function generateJSON<T>(
+  gemini: GoogleGenerativeAI,
+  prompt: string,
+  systemInstruction: string,
+): Promise<T | null> {
+  try {
+    const model = gemini.getGenerativeModel({
+      model: GEMINI_MODEL,
+      systemInstruction,
+      generationConfig: {
+        temperature: 0.0,
+        responseMimeType: "application/json",
+      },
+    });
+
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text();
+
+    if (!text) {
+      console.error("[GEMINI] Empty response");
+      return null;
+    }
+
+    return JSON.parse(text) as T;
+  } catch (error) {
+    console.error("[GEMINI] Generation failed:", error);
+    return null;
+  }
+}
+
+// ============================================================================
+// MAIN HANDLER
+// ============================================================================
+serve(async (req: Request): Promise<Response> => {
+  // 1. GESTION DU PRE-FLIGHT (OPTIONS) - PRIORITÉ ABSOLUE
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    console.log("[STRATEGIZE] 🚀 Function script loaded!");
-    console.log(`[STRATEGIZE] 🟢 Request received: ${req.method} ${req.url}`);
+    // 2. RÉCUPÉRATION SÉCURISÉE DU BODY
+    const requestData = await req.json() as StrategizeRequest;
+    const { projectId, force_analyze } = requestData;
 
-    // 1. Parsing Body
-    let body: StrategizeRequest;
-    try {
-      body = await req.json();
-    } catch (e) {
-      console.error("[STRATEGIZE] ❌ Failed to parse JSON body:", e);
-      return new Response(
-        JSON.stringify({ success: false, error: "Invalid JSON body" }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
-        },
-      );
+    if (!projectId) {
+      throw new Error("Missing projectId");
     }
 
-    const { projectId, force_analyze } = body;
-    if (!projectId) throw new Error("Missing projectId");
+    console.log(`[STRATEGIZE] 🚀 Starting for Project: ${projectId}`);
 
-    console.log(`[STRATEGIZE] 🏁 Starting Phase 1 for Project: ${projectId}`);
+    // 3. INITIALISATION CLIENTS (Supabase & Gemini)
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const geminiApiKey = Deno.env.get("GOOGLE_API_KEY") ||
+      Deno.env.get("GEMINI_API_KEY");
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error("Missing Supabase credentials");
+    }
+    if (!geminiApiKey) {
+      throw new Error("Missing GEMINI_API_KEY");
+    }
 
-    // 2. Get Context (INLINED)
-    console.log(`[STRATEGIZE] 🧩 Aggregating Context (Inlined)...`);
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const gemini = new GoogleGenerativeAI(geminiApiKey);
+
+    // 4. FETCH CONTEXT
+    console.log(`[STRATEGIZE] 🧩 Aggregating Context...`);
 
     const { data: projectData, error: projectError } = await supabase
       .from("project_data")
@@ -252,9 +366,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       throw new Error(`Failed to fetch project data: ${projectError.message}`);
     }
 
-    const agencyDNA = (projectData?.find((d: any) =>
+    const agencyDNA = (projectData?.find((d: ProjectDataRow) =>
       d.data_type === "agency_dna"
-    )?.data as any) || {};
+    )?.data as AgencyDNA) || ({} as AgencyDNA);
 
     const { data: documentsData, error: docsError } = await supabase
       .from("company_documents")
@@ -268,13 +382,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const methodology = agencyDNA.methodology || "";
     const websiteContent = agencyDNA.extractedContent?.websiteContent || "";
 
-    const docsText = documentsData?.map((d: any) =>
+    const docsText = documentsData?.map((d: DocumentRow) =>
       `--- DOCUMENT: ${d.file_name} ---\n${
         d.extracted_content?.substring(0, 500000) || ""
       }`
     ).join("\n\n") || "";
 
-    const fullText = `
+    let fullText = `
     === KNOWLEDGE BASE (PRIMARY SOURCE OF TRUTH) ===
     ${docsText}
 
@@ -288,60 +402,34 @@ Deno.serve(async (req: Request): Promise<Response> => {
     ${websiteContent.substring(0, 20000)}
     `;
 
-    const context = {
-      projectId,
-      agencyName: agencyDNA.companyName || "Unknown",
-      websiteContent,
-      documentsContent: docsText,
-      fullText,
-    };
+    console.log(`[STRATEGIZE] 📏 Context length: ${fullText.length} chars`);
+    console.log(`[STRATEGIZE] 📄 Documents: ${documentsData?.length || 0}`);
 
-    // DIAGNOSTIC LOGS
-    console.log(
-      `[DIAGNOSTIC] 📏 Context Stats for Project ${projectId}:`,
-    );
-    console.log(
-      `[DIAGNOSTIC] - Website Content Length: ${
-        context.websiteContent?.length || 0
-      }`,
-    );
-    console.log(
-      `[DIAGNOSTIC] - Documents Content Length: ${
-        context.documentsContent?.length || 0
-      }`,
-    );
-    console.log(
-      `[DIAGNOSTIC] - Full Text Context Length: ${
-        context.fullText?.length || 0
-      }`,
-    );
-
-    // PROOF OF LIFE: Log the actual documents found
-    if (context.documentsContent) {
-      console.log("[DIAGNOSTIC] 📄 DOCUMENTS INTEGRATED:");
-      // Extract document names from the formatted string if possible, or just log the header
-      const docHeaders = context.documentsContent.match(
-        /--- DOCUMENT: .+ ---/g,
+    // BLACK HOLE CHECK
+    if (!docsText || docsText.trim().length === 0) {
+      throw new Error(
+        "ABORT: No documents found. Please upload PDFs to Knowledge Base.",
       );
-      if (docHeaders) {
-        docHeaders.forEach((header: string) =>
-          console.log(`[DIAGNOSTIC]   ✅ Found: ${header}`)
-        );
-      } else {
-        console.log(
-          "[DIAGNOSTIC]   (No structured headers found, but content exists)",
-        );
-      }
-      console.log(
-        `[DIAGNOSTIC] 🔍 PREVIEW (first 500 chars): \n${
-          context.documentsContent.substring(0, 500)
-        }...`,
-      );
-    } else {
-      console.warn("[DIAGNOSTIC] ⚠️ NO DOCUMENTS CONTENT FOUND IN CONTEXT!");
     }
 
-    // 3. Check Existing Identity (if not forcing)
+    // AUTO-ENRICHMENT: Scrape if needed
+    if (!websiteContent || websiteContent.length < 200) {
+      console.log("[STRATEGIZE] 🕵️ Attempting fallback scrape...");
+      const siteUrl = agencyDNA.website;
+      const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
+
+      if (siteUrl && firecrawlKey) {
+        const scraped = await scrapeClientSite(siteUrl, firecrawlKey);
+        if (scraped) {
+          console.log(`[STRATEGIZE] ✅ Scraped ${scraped.length} chars`);
+          fullText += `\n\n=== FRESH SCRAPE ===\n${
+            scraped.substring(0, 20000)
+          }`;
+        }
+      }
+    }
+
+    // 5. CHECK EXISTING IDENTITY
     let identity: StrategicIdentity | null = null;
     if (!force_analyze) {
       const { data: existing } = await supabase
@@ -349,99 +437,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .select("*")
         .eq("project_id", projectId)
         .maybeSingle();
+
       if (existing) {
-        console.log(`[STRATEGIZE] Found existing identity for ${projectId}`);
+        console.log(`[STRATEGIZE] ✅ Found existing identity`);
         identity = existing as StrategicIdentity;
       }
     }
 
-    // 4. Generate Identity if needed
-    const googleApiKey = Deno.env.get("GOOGLE_API_KEY") ||
-      Deno.env.get("GEMINI_API_KEY")!;
-    if (!googleApiKey) {
-      throw new Error("Missing GEMINI_API_KEY");
-    }
-
-    const gemini = new GeminiClient(googleApiKey);
-
+    // 6. GENERATE IDENTITY IF NEEDED
     if (!identity) {
       console.log(`[STRATEGIZE] 🧠 Generating NEW Strategic Identity...`);
 
-      // BLACK HOLE CHECK: Ensure we actually have documents
-      if (
-        !context.documentsContent ||
-        context.documentsContent.trim().length === 0
-      ) {
-        console.error(
-          "[STRATEGIZE] 🔴 CRITICAL: No documents found in context!",
-        );
-        throw new Error(
-          "ABORT: Kortex Brain is empty. Please upload PDF documents to the Knowledge Base before running the radar.",
-        );
-      }
-
-      // 🔍 AUTO-ENRICHMENT: If website content is empty, SCRAPE IT.
-      if (!context.websiteContent || context.websiteContent.length < 200) {
-        console.log(
-          "[STRATEGIZE] 🕵️ Context empty, attempting fallback scrape...",
-        );
-        const { data: projectData } = await supabase.from("project_data")
-          .select("data").eq("project_id", projectId).eq(
-            "data_type",
-            "agency_dna",
-          ).single();
-        const siteUrl = projectData?.data?.website;
-
-        if (siteUrl) {
-          // Safe call for API Key
-          const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY") || "";
-          if (firecrawlKey) {
-            const scraped = await scrapeClientSite(siteUrl, firecrawlKey);
-            if (scraped) {
-              console.log(
-                `[STRATEGIZE] ✅ Injected Real Client Data (${scraped.length} chars)`,
-              );
-              context.fullText += `\n\n=== FRESH SCRAPE OF CLIENT SITE ===\n${
-                scraped.substring(0, 20000)
-              }`;
-            }
-          } else {
-            console.warn(
-              "[STRATEGIZE] ⚠️ Missing FIRECRAWL_API_KEY, skipping fallback scrape",
-            );
-          }
-        }
-      }
-
-      // SAFETY TRUNCATION: Limit context to 500k chars (Pro handles 2M tokens, so 500k chars is safe)
-      const safeContext = context.fullText.substring(0, 500000);
-
+      const safeContext = fullText.substring(0, 500000);
       const finalMissionPrompt = MISSION_PROMPT.replace(
         "{GLOBAL_CONTEXT}",
         safeContext,
       );
 
-      // --- AUDIT LOGS (DATA DUMP) ---
-      console.log("==========================================");
-      console.log("[AUDIT] 🚨 SYSTEM INSTRUCTION DUMP:");
-      console.log(SYSTEM_INSTRUCTION);
-      console.log("------------------------------------------");
-      console.log(
-        "[AUDIT] 🥩 FULL CONTEXT DUMP (" + context.fullText.length + " chars):",
-      );
-      if (context.fullText.length > 500) {
-        console.log(
-          `[AUDIT] PREVIEW START: ${context.fullText.substring(0, 500)}...`,
-        );
-      }
-      console.log("==========================================");
-
-      const identityJson = await gemini.generateJSON<StrategicIdentity>(
+      const identityJson = await generateJSON<StrategicIdentity>(
+        gemini,
         finalMissionPrompt,
-        GEMINI_MODELS.PRO, // UPGRADE: Using PRO for deeper reading comprehension
-        SYSTEM_INSTRUCTION, // System prompt separated
-        undefined,
-        { temperature: 0.0 }, // ABSOLUTE ZERO TEMPERATURE
+        SYSTEM_INSTRUCTION,
       );
 
       if (!identityJson) {
@@ -449,24 +465,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
 
       console.log(
-        `[DIAGNOSTIC] 🕵️ VERIFICATION CITATION: "${identityJson.verification_citation}"`,
+        `[STRATEGIZE] 🕵️ Verification: "${identityJson.verification_citation}"`,
       );
 
       // Save to DB
-      const consciousnessLog = identityJson.consciousness_summary
-        ? identityJson.consciousness_summary.join("\n- ")
-        : "No consciousness summary";
-
-      const pillarsSummary = identityJson.strategic_pillars
-        ? identityJson.strategic_pillars.map((p: StrategicPillar) =>
+      const consciousnessLog =
+        identityJson.consciousness_summary?.join("\n- ") || "No summary";
+      const pillarsSummary =
+        identityJson.strategic_pillars?.map((p: StrategicPillar) =>
           `[${p.name}]`
-        ).join(
-          " + ",
-        )
-        : "";
+        ).join(" + ") || "";
 
       const expertValueProp =
-        `🧠 CONSCIOUSNESS SUMMARY (Anti-B2B Proof):\n- ${consciousnessLog}\n\n🔥 STRATEGY PROOF:\n${pillarsSummary}\n\n${identityJson.unique_value_proposition}`;
+        `🧠 CONSCIOUSNESS SUMMARY:\n- ${consciousnessLog}\n\n🔥 PILLARS:\n${pillarsSummary}\n\n${identityJson.unique_value_proposition}`;
 
       const dbPayload = {
         project_id: projectId,
@@ -490,42 +501,57 @@ Deno.serve(async (req: Request): Promise<Response> => {
       identity = saved || identityJson;
     }
 
-    // 5. Generate Strategy
+    // 7. GENERATE STRATEGY
     console.log(`[STRATEGIZE] ⚔️ Generating Queries...`);
     const finalStrategyPrompt = STRATEGY_PROMPT.replace(
       "{IDENTITY_JSON}",
       JSON.stringify(identity, null, 2),
     );
 
-    const strategyJson = await gemini.generateJSON(
-      finalStrategyPrompt,
-      GEMINI_MODELS.PRO,
-      SYSTEM_INSTRUCTION,
-      undefined,
-      { temperature: 0.5 },
+    const strategyJson = await generateJSON<{
+      value_proposition?: string;
+      core_pain_points?: string[];
+      queries?: string[];
+      synthesis_proof?: string;
+    }>(gemini, finalStrategyPrompt, SYSTEM_INSTRUCTION);
+
+    if (!strategyJson) {
+      throw new Error("Strategy generation returned null");
+    }
+
+    if (!strategyJson.queries || !Array.isArray(strategyJson.queries)) {
+      throw new Error("Strategy response missing 'queries' field");
+    }
+
+    console.log(
+      `[STRATEGIZE] ✅ Success - ${strategyJson.queries.length} queries generated`,
     );
 
-    console.log(`[STRATEGIZE] ✅ Success`);
-
+    // 8. RÉPONSE STANDARDISÉE (Succès)
     return new Response(
       JSON.stringify({
         success: true,
         identity: identity,
         strategy: strategyJson,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      },
     );
   } catch (error: unknown) {
-    console.error("[STRATEGIZE] 🔥 FATAL ERROR:", error);
+    // 9. FILET DE SÉCURITÉ (Catch-All)
+    console.error("[STRATEGIZE] 🔥 CRITICAL ERROR:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
+
     return new Response(
       JSON.stringify({
         success: false,
-        error: errorMessage || "Unknown fatal error",
+        error: errorMessage,
       }),
       {
-        status: 200, // Return 200 to prevent Supabase 500 generic error
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500,
       },
     );
   }
