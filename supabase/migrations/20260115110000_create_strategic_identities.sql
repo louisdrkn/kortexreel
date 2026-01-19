@@ -4,6 +4,7 @@ create table if not exists strategic_identities (
   unique_value_proposition text,
   core_pain_points jsonb,      -- List of pain points identified from Deep Analysis
   symptom_profile jsonb,       -- Observable signals (keywords, technologies, job posts)
+  anti_patterns jsonb,         -- Anti-patterns/observable symptoms (used by strategize-radar)
   ideal_prospect_profile text,
   exclusion_criteria text,
   created_at timestamp with time zone default now(),
