@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
     const companyUrl = company.company_url;
     const companyName = company.company_name;
 
-    // 2. FETCH CONTEXT (Axole Docs)
+    // 2. FETCH CONTEXT (Agency Docs)
     // (Similar logic to discover-companies, kept concise)
     const { data: projectData } = await supabase
       .from("project_data")
@@ -133,37 +133,52 @@ Deno.serve(async (req) => {
 
     const gemini = new GeminiClient(googleApiKey);
 
-    // 4. SCRAPE TARGET SITE
-    console.log(`[ANALYZE] Scraping ${companyUrl}...`);
-    let scrapedContent = "";
-
-    try {
-      const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${firecrawlKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          url: companyUrl,
-          formats: ["markdown"],
-          onlyMainContent: true,
-          timeout: 45000,
-        }),
-      });
-
-      if (scrapeResp.ok) {
-        const d = await scrapeResp.json();
-        scrapedContent = d.data?.markdown || "";
-      } else {
-        console.warn("Firecrawl scrape failed");
-      }
-    } catch (e) {
-      console.error("Scrape Error", e);
+    // 4. SCRAPE TARGET SITE (Robust)
+    let validUrl = companyUrl;
+    // Basic cleaning
+    if (validUrl && !validUrl.startsWith("http")) {
+      validUrl = "https://" + validUrl;
     }
 
-    if (!scrapedContent || scrapedContent.length < 200) {
-      throw new Error("Failed to scrape company website content.");
+    console.log(`[ANALYZE] Scraping ${validUrl || companyName}...`);
+    let scrapedContent = "";
+    let isScrapeSuccessful = false;
+
+    if (validUrl && validUrl.includes(".")) {
+      try {
+        const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${firecrawlKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            url: validUrl,
+            formats: ["markdown"],
+            onlyMainContent: true,
+            timeout: 30000, // Reduced timeout to fail faster
+          }),
+        });
+
+        if (scrapeResp.ok) {
+          const d = await scrapeResp.json();
+          scrapedContent = d.data?.markdown || "";
+          isScrapeSuccessful = true;
+        } else {
+          console.warn("Firecrawl scrape failed, status:", scrapeResp.status);
+        }
+      } catch (e) {
+        console.error("Scrape Error (continue anyway)", e);
+      }
+    }
+
+    if (!isScrapeSuccessful) {
+      console.warn("[ANALYZE] ⚠️ Scrape failed or no URL. Using Fallback.");
+      scrapedContent = `[WEBSITE CONTENT UNAVAILABLE] 
+        The AI could not access the website. 
+        Analyze this company based strictly on its Name: "${companyName}" 
+        and Industry/Context clues if available. 
+        Focus on how the Agency can help a company with this name/profile.`;
     }
 
     // 5. ENRICH WITH GOOGLE MAPS
@@ -174,20 +189,23 @@ Deno.serve(async (req) => {
 
     const analysisPrompt = `
     [SYSTEM: KORTEX SKEPTIC - DEEP DIVE]
-    CONTEXT: Deeply analyze this specific company to see if they are a perfect client for Axole.
+    CONTEXT: Deeply analyze this specific company to see if they are a perfect client for the Agency.
     
-    === AXOLE CONTEXT ===
+    === AGENCY CONTEXT ===
     ${GlobalContext}
     
     === TARGET COMPANY CONTENT ===
-    URL: ${companyUrl}
+    URL: ${companyUrl} (Scrape Status: ${
+      isScrapeSuccessful ? "Success" : "Failed"
+    })
     CONTENT:
     ${scrapedContent.substring(0, 15000)}
     
     === MISSION ===
-    1. Score this prospect (0-100) based on alignment with Axole's solution.
-    2. Identify specific pain points evidencing need for Axole.
-    3. Find Buying Signals (e.g. outdated tech, hiring, bad reviews).
+    1. Score this prospect (0-100) based on alignment with the Agency's solution.
+       (If website content is missing, infer based on Company Name/Industry and typical pains in that sector).
+    2. Identify specific pain points evidencing need for the Agency's solution.
+    3. Find Buying Signals (e.g. outdated tech, hiring, bad reviews) - OR infer likely signals for this sector.
     
     OUTPUT JSON:
     {
@@ -195,8 +213,8 @@ Deno.serve(async (req) => {
         "match_explanation": "One sentence summary of why they fit or don't fit.",
         "detected_pain_points": ["Pain 1", "Pain 2"],
         "buying_signals": ["Signal 1", "Signal 2"],
-        "strategic_analysis": "Detailed reasoning linking company problems to Axole solutions.",
-        "evidence_snippet": "Quote from site"
+        "strategic_analysis": "Detailed reasoning linking company problems to the Agency's solutions.",
+        "evidence_snippet": "Quote from site or Inference rationale"
     }
     `;
 

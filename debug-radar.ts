@@ -56,12 +56,11 @@ async function main() {
     // ensuring the function logic itself works.
 
     const { data, error } = await supabaseAdmin.functions.invoke(
-        "discover-companies",
+        "execute-radar",
         {
             body: {
                 projectId: project.id,
-                force_refresh: true,
-                strategy: "flash_scan", // Use flash scan for speed
+                approved_queries: ["Software companies in France doing AI"],
             },
         },
     );

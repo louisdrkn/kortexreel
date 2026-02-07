@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ProjectProvider } from "@/contexts/ProjectContext";
 import { PODProvider } from "@/contexts/PODContext";
@@ -41,7 +41,9 @@ function ScrollToTop() {
 
 function AuthLoading({ children }: { children: React.ReactNode }) {
   const { isLoading } = useAuth();
-  if (isLoading) return <FullScreenAuthLoader label="Chargement de la session…" />;
+  if (isLoading) {
+    return <FullScreenAuthLoader label="Chargement de la session…" />;
+  }
   return <>{children}</>;
 }
 
@@ -64,60 +66,155 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+import { RadarProvider } from "@/contexts/RadarContext";
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <ProjectProvider>
         <PODProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <ScrollToTop />
-              <Routes>
-                {/* Auth Route */}
-                <Route path="/auth" element={<Auth />} />
+          <RadarProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <ScrollToTop />
+                <Routes>
+                  {/* Auth Route */}
+                  <Route path="/auth" element={<Auth />} />
 
-                {/* Onboarding Route (Protected but no sidebar) */}
-                <Route
-                  path="/onboarding"
-                  element={
-                    <Protected>
-                      <Onboarding />
-                    </Protected>
-                  }
-                />
+                  {/* Onboarding Route (Protected but no sidebar) */}
+                  <Route
+                    path="/onboarding"
+                    element={
+                      <Protected>
+                        <Onboarding />
+                      </Protected>
+                    }
+                  />
 
-                {/* Projects List (Protected but no POD layout) */}
-                <Route
-                  path="/"
-                  element={
-                    <Protected>
-                      <Projects />
-                    </Protected>
-                  }
-                />
+                  {/* Projects List (Protected but no POD layout) */}
+                  <Route
+                    path="/"
+                    element={
+                      <Protected>
+                        <Projects />
+                      </Protected>
+                    }
+                  />
 
-                {/* App Routes with Layout */}
-                <Route path="/dashboard" element={<AppLayout><Cockpit /></AppLayout>} />
-                <Route path="/strategie/cerveau" element={<AppLayout><AgencyBrain /></AppLayout>} />
-                <Route path="/strategie/cible" element={<AppLayout><TargetDefinition /></AppLayout>} />
-                <Route path="/radar/scan" element={<AppLayout><MarketRadar /></AppLayout>} />
-                <Route path="/radar/prospect" element={<AppLayout><ProspectDeepDive /></AppLayout>} />
-                <Route path="/radar/outreach" element={<AppLayout><OutreachSequence /></AppLayout>} />
-                <Route path="/radar/rdv" element={<AppLayout><RDVCapture /></AppLayout>} />
-                <Route path="/radar/prospects" element={<AppLayout><FicheProspect /></AppLayout>} />
-                <Route path="/closing/propale" element={<AppLayout><ProposalGenerator /></AppLayout>} />
-                <Route path="/closing/export" element={<AppLayout><ExportPage /></AppLayout>} />
-                <Route path="/data-room" element={<AppLayout><DataRoom /></AppLayout>} />
-                <Route path="/settings/integrations" element={<AppLayout><Integrations /></AppLayout>} />
-                <Route path="/settings" element={<AppLayout><Settings /></AppLayout>} />
+                  {/* App Routes with Layout */}
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <AppLayout>
+                        <Cockpit />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/strategie/cerveau"
+                    element={
+                      <AppLayout>
+                        <AgencyBrain />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/strategie/cible"
+                    element={
+                      <AppLayout>
+                        <TargetDefinition />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/radar/scan"
+                    element={
+                      <AppLayout>
+                        <MarketRadar />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/radar/prospect"
+                    element={
+                      <AppLayout>
+                        <ProspectDeepDive />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/radar/outreach"
+                    element={
+                      <AppLayout>
+                        <OutreachSequence />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/radar/rdv"
+                    element={
+                      <AppLayout>
+                        <RDVCapture />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/radar/prospects"
+                    element={
+                      <AppLayout>
+                        <FicheProspect />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/closing/propale"
+                    element={
+                      <AppLayout>
+                        <ProposalGenerator />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/closing/export"
+                    element={
+                      <AppLayout>
+                        <ExportPage />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/data-room"
+                    element={
+                      <AppLayout>
+                        <DataRoom />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/settings/integrations"
+                    element={
+                      <AppLayout>
+                        <Integrations />
+                      </AppLayout>
+                    }
+                  />
+                  <Route
+                    path="/settings"
+                    element={
+                      <AppLayout>
+                        <Settings />
+                      </AppLayout>
+                    }
+                  />
 
-                {/* 404 */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
+                  {/* 404 */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </BrowserRouter>
+            </TooltipProvider>
+          </RadarProvider>
         </PODProvider>
       </ProjectProvider>
     </AuthProvider>
@@ -125,4 +222,3 @@ const App = () => (
 );
 
 export default App;
-

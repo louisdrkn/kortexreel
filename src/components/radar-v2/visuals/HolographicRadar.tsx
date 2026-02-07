@@ -102,7 +102,7 @@ export function HolographicRadar({
                 animate={isActive ? { rotate: 360 } : { rotate: 0 }}
                 transition={isActive
                     ? {
-                        duration: scanStep === "searching" ? 1.5 : 3,
+                        duration: scanStep === "searching" ? 3 : 4, // Slower, deeper scan
                         repeat: Infinity,
                         ease: "linear",
                     }

@@ -174,6 +174,7 @@ export function useCompanyDocuments() {
             documentId: newDoc.id,
             fileUrl: urlData.signedUrl,
             fileName: file.name,
+            projectId: currentProject.id, // FIX: Pass Project ID to prevent context loss
           },
         }).then(({ data, error }) => {
           if (error) {

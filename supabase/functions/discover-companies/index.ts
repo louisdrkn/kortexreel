@@ -1,5 +1,5 @@
-import "@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "@supabase/supabase-js";
+// import "@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 
 import { GEMINI_MODELS, GeminiClient } from "../_shared/api-clients.ts";
 import { SYSTEM_INSTRUCTION as DRACONIAN_SYSTEM_INSTRUCTION } from "../_shared/prompts.ts";

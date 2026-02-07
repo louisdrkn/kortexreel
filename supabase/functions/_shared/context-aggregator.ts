@@ -1,4 +1,4 @@
-import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { AgencyDNA, TargetDefinition } from "./types.ts";
 
 export interface GlobalContext {
@@ -13,6 +13,8 @@ export interface GlobalContext {
 }
 
 export class ContextAggregator {
+  // Accept SupabaseClient from any import source (JSR or ESM)
+  // Using the type import ensures compatibility across different module sources
   private supabase: SupabaseClient;
 
   constructor(supabaseClient: SupabaseClient) {
@@ -42,11 +44,15 @@ export class ContextAggregator {
     }
 
     const agencyDNA =
-      (projectData?.find((d) => d.data_type === "agency_dna")?.data as
+      (projectData?.find((
+        d: { data_type: string; data: Record<string, unknown> },
+      ) => d.data_type === "agency_dna")?.data as
         | AgencyDNA
         | undefined) || {};
     const targetDef =
-      (projectData?.find((d) => d.data_type === "target_definition")?.data as
+      (projectData?.find((
+        d: { data_type: string; data: Record<string, unknown> },
+      ) => d.data_type === "target_definition")?.data as
         | TargetDefinition
         | undefined) || {};
 
@@ -69,7 +75,9 @@ export class ContextAggregator {
     const websiteContent = agencyDNA.extractedContent?.websiteContent || "";
 
     const docsText =
-      documentsData?.map((d) =>
+      documentsData?.map((
+        d: { file_name: string; extracted_content?: string },
+      ) =>
         `--- DOCUMENT: ${d.file_name} ---\n${
           d.extracted_content?.substring(0, 150000)
         }` // High limit (150k) but safe for Edge Function Timeout

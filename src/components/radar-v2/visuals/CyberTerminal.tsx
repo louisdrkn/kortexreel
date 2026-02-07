@@ -30,7 +30,7 @@ export function CyberTerminal(
             case "searching":
                 return {
                     icon: Zap,
-                    text: `SCAN FLASH FIRECRAWL EN COURS...`,
+                    text: activeMessage, // Dynamic Message
                     color: "text-violet-400",
                 };
             case "validating":
@@ -53,6 +53,31 @@ export function CyberTerminal(
                 };
         }
     };
+
+    // Cycling Messages Logic
+    const [activeMessage, setActiveMessage] = useState(
+        "EXPLORATION DU WEB PROFOND...",
+    );
+    const SEARCH_MESSAGES = [
+        "EXPLORATION DU WEB PROFOND...",
+        "ANALYSE DES SIGNAUX DE MARCHÉ...",
+        "DÉTECTION DES CIBLES POTENTIELLES...",
+        "VÉRIFICATION DES SOURCES EN COURS...",
+        "CONNEXION SÉCURISÉE AU CORTEX...",
+        "RECHERCHE D'OPPORTUNITÉS CACHÉES...",
+    ];
+
+    useEffect(() => {
+        if (scanStep !== "searching") return;
+
+        let index = 0;
+        const interval = setInterval(() => {
+            index = (index + 1) % SEARCH_MESSAGES.length;
+            setActiveMessage(SEARCH_MESSAGES[index]);
+        }, 4000); // Change every 4 seconds
+
+        return () => clearInterval(interval);
+    }, [scanStep]);
 
     const status = getStatus();
     const Icon = status.icon;

@@ -1,5 +1,21 @@
+-- Enable Realtime for critical tables (idempotent)
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE projects;
+    EXCEPTION WHEN duplicate_object THEN
+        NULL;
+    END;
 
--- Enable Realtime for critical tables
-alter publication supabase_realtime add table projects;
-alter publication supabase_realtime add table company_analyses;
-alter publication supabase_realtime add table project_data;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE company_analyses;
+    EXCEPTION WHEN duplicate_object THEN
+        NULL;
+    END;
+
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE project_data;
+    EXCEPTION WHEN duplicate_object THEN
+        NULL;
+    END;
+END $$;

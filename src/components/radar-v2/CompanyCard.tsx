@@ -40,40 +40,46 @@ interface CompanyCardProps {
 }
 
 function getScoreColor(score: number) {
-  if (score >= 85) {
-    return {
-      border: "border-emerald-500/50",
-      text: "text-emerald-400",
-      bg: "bg-emerald-500/10",
-      ring: "ring-emerald-500/20",
-      shadow: "shadow-[0_0_15px_rgba(16,185,129,0.3)]",
-    };
-  }
-  if (score >= 70) {
-    return {
-      border: "border-amber-500/50",
-      text: "text-amber-400",
-      bg: "bg-amber-500/10",
-      ring: "ring-amber-500/20",
-      shadow: "shadow-[0_0_15px_rgba(245,158,11,0.3)]",
-    };
-  }
-  if (score >= 50) {
-    return {
-      border: "border-blue-500/50",
-      text: "text-blue-400",
-      bg: "bg-blue-500/10",
-      ring: "ring-blue-500/20",
-      shadow: "shadow-[0_0_15px_rgba(59,130,246,0.3)]",
-    };
-  }
+  // SCORE IS DEAD: Always return "Hot/Verified" style
   return {
-    border: "border-slate-700",
-    text: "text-slate-400",
-    bg: "bg-slate-800/50",
-    ring: "ring-slate-700",
-    shadow: "",
+    border: "border-emerald-500/50",
+    text: "text-emerald-400",
+    bg: "bg-emerald-500/10",
+    ring: "ring-emerald-500/20",
+    shadow: "shadow-[0_0_15px_rgba(16,185,129,0.3)]",
   };
+}
+
+function ensureUrlProtocol(url: string): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `https://${url}`;
+}
+
+// Helper to strictly get the homepage URL (origin only)
+// Helper to strictly get the homepage URL (origin only)
+function getHomepageUrl(
+  url: string | undefined,
+  backupDomain?: string,
+): string {
+  const candidate = url || backupDomain;
+  if (!candidate) return "";
+
+  let clean = candidate.trim();
+  // Fix specific "https" bug if it occurs
+  if (clean === "https" || clean === "http") return "";
+
+  if (!clean.match(/^https?:\/\//)) {
+    clean = `https://${clean}`;
+  }
+  try {
+    const urlObj = new URL(clean);
+    // Avoid "https://https" edge case
+    if (urlObj.hostname === "https") return "";
+    return urlObj.origin;
+  } catch {
+    return clean;
+  }
 }
 
 // Extract domain from website URL
@@ -86,6 +92,19 @@ function extractDomain(url?: string): string | null {
   } catch {
     return url.replace(/^(https?:\/\/)?(www\.)?/, "").split("/")[0];
   }
+}
+
+function cleanCompanyName(name: string): string {
+  if (!name) return "";
+  // Removes .com, .fr, .io, etc at the end, and www. at start
+  return name
+    .replace(/^www\./i, "")
+    .replace(/\.[a-z]{2,6}$/i, "") // Remove TLD like .com, .fr
+    .replace(/[-_]/g, " ") // Optional: replace dashes with spaces for better read logic? User asked to "remove .com" specifically.
+    // Let's stick to user request: "enlevé le .com"
+    .replace(/\.com$/i, "") // Strict per user request first, but regex covers general TLDs usually.
+  ; // The user said "interchanger le nom avec le liens".
+  // Let's assume the name IS the domain for now.
 }
 
 export function CompanyCard(
@@ -101,7 +120,20 @@ export function CompanyCard(
 
   const score = company.score || 0;
   const colors = getScoreColor(score);
-  const domain = company.domain || extractDomain(company.website);
+
+  // LOGIC SWAP: User implies Name might be the Domain, and Link might be bad.
+  // We prioritize constructing the URL from the Name if it looks like a domain,
+  // or fall back to website.
+  const isNameDomain = company.name.includes(".");
+  const effectiveDomain = isNameDomain
+    ? company.name
+    : (company.website || company.domain);
+
+  const fullUrl = getHomepageUrl(effectiveDomain);
+  // Clean name for display: remove TLD if it looks like a domain
+  const displayName = isNameDomain ? company.name.split(".")[0] : company.name;
+
+  const domain = extractDomain(effectiveDomain);
 
   const decisionMaker = company.decisionMaker;
   const canReveal = !!onRevealContact && !decisionMaker;
@@ -290,28 +322,73 @@ export function CompanyCard(
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {/* Logo with Clearbit + elegant fallback */}
-            <div className="bg-white rounded-lg p-0.5">
-              <CompanyLogo
-                name={company.name}
-                website={company.website}
-                domain={company.domain}
-                size="lg"
-              />
-            </div>
+            {company.website
+              ? (
+                <a
+                  href={fullUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-white rounded-lg p-0.5 block hover:ring-2 hover:ring-violet-500/50 transition-all"
+                >
+                  <CompanyLogo
+                    name={company.name}
+                    website={company.website}
+                    domain={company.domain}
+                    size="lg"
+                  />
+                </a>
+              )
+              : (
+                <div className="bg-white rounded-lg p-0.5">
+                  <CompanyLogo
+                    name={company.name}
+                    website={company.website}
+                    domain={company.domain}
+                    size="lg"
+                  />
+                </div>
+              )}
 
             {/* Name */}
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-slate-100 truncate text-base leading-tight group-hover:text-violet-300 transition-colors">
-                {company.name}
-              </h3>
+              {company.website
+                ? (
+                  <a
+                    href={fullUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="block group/link"
+                  >
+                    <h3 className="font-semibold text-slate-100 text-base leading-snug group-hover/link:text-violet-300 transition-colors flex items-center gap-1.5 min-w-0">
+                      <span className="break-words line-clamp-2 md:line-clamp-none">
+                        {displayName}
+                      </span>
+                      <ExternalLink className="h-3.5 w-3.5 opacity-0 group-hover/link:opacity-100 transition-opacity text-slate-400 flex-shrink-0" />
+                    </h3>
+                  </a>
+                )
+                : (
+                  <h3 className="font-semibold text-slate-100 text-base leading-snug group-hover:text-violet-300 transition-colors break-words line-clamp-2 md:line-clamp-none">
+                    {displayName}
+                  </h3>
+                )}
               {company.website && (
-                <p className="text-xs text-slate-500 truncate flex items-center gap-1 mt-0.5 group-hover:text-slate-400">
-                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                  {domain ||
-                    company.website.replace(/^https?:\/\/(www\.)?/, "").split(
-                      "/",
-                    )[0]}
-                </p>
+                <a
+                  href={fullUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center gap-1 mt-0.5 w-fit hover:bg-slate-800/50 rounded px-1 -ml-1 transition-colors group/url"
+                >
+                  <ExternalLink className="h-3 w-3 flex-shrink-0 text-slate-500 group-hover/url:text-violet-400" />
+                  <span className="text-xs text-slate-500 truncate group-hover/url:text-violet-300 transition-colors">
+                    {domain ||
+                      company.website?.replace(/^https?:\/\/(www\.)?/, "")
+                        .split("/")[0]}
+                  </span>
+                </a>
               )}
               {company.googleMaps && (
                 <div className="mt-1 flex items-center gap-2">
@@ -361,16 +438,42 @@ export function CompanyCard(
           </div>
 
           {/* Score */}
-          <div
-            className={cn(
-              "flex-shrink-0 px-3 py-2 rounded-lg font-bold text-lg backdrop-blur-md",
-              colors.bg,
-              colors.text,
-              colors.shadow,
-              (hasPersistedDecisionMaker || canReveal) && "mr-8",
-            )}
-          >
-            {score}
+          {/* Strategic Category or Score */}
+          <div className="flex-shrink-0">
+            {company.strategicCategory
+              ? (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-bold uppercase tracking-wide border transition-all",
+                    company.strategicCategory === "PERFECT_MATCH" &&
+                      "bg-emerald-500/10 border-emerald-500/40 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]",
+                    company.strategicCategory === "OPPORTUNITY" &&
+                      "bg-blue-500/10 border-blue-500/40 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.2)]",
+                    company.strategicCategory === "OUT_OF_SCOPE" &&
+                      "bg-slate-800/50 border-slate-700 text-slate-500",
+                  )}
+                >
+                  {company.strategicCategory === "PERFECT_MATCH" &&
+                    "🎯 Cœur de Cible"}
+                  {company.strategicCategory === "OPPORTUNITY" &&
+                    "💡 Opportunité"}
+                  {company.strategicCategory === "OUT_OF_SCOPE" &&
+                    "🚫 Hors Cible"}
+                </Badge>
+              )
+              : (
+                <div
+                  className={cn(
+                    "px-3 py-2 rounded-lg font-bold text-lg backdrop-blur-md",
+                    colors.bg,
+                    colors.text,
+                    colors.shadow,
+                  )}
+                >
+                  {score}
+                </div>
+              )}
           </div>
         </div>
       </div>
@@ -418,7 +521,7 @@ export function CompanyCard(
                 ANALYSE PROFONDE...
               </p>
               <p className="text-xs text-slate-400">
-                Scraping du site & Croisement Axole
+                Scraping du site & Croisement Offre
               </p>
             </div>
           </div>
@@ -506,11 +609,32 @@ export function CompanyCard(
         {/* IA INSIGHT - Match Reason with dynamic explanation */}
         {company.matchReason && (
           <div className="space-y-2">
-            <p className="text-xs text-slate-300 leading-relaxed bg-gradient-to-r from-violet-500/10 to-transparent p-2 rounded-lg border-l-2 border-violet-500/30">
-              <Sparkles className="inline h-3 w-3 text-violet-400 mr-1" />
-              {company.matchReason.slice(0, 150)}
-              {company.matchReason.length > 150 ? "..." : ""}
-            </p>
+            {company.website
+              ? (
+                <a
+                  href={ensureUrlProtocol(company.website)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="block group/reason"
+                >
+                  <p className="text-xs text-slate-300 leading-relaxed bg-gradient-to-r from-violet-500/10 to-transparent p-2 rounded-lg border-l-2 border-violet-500/30 group-hover/reason:bg-violet-500/20 transition-colors">
+                    <Sparkles className="inline h-3 w-3 text-violet-400 mr-1" />
+                    <span className="group-hover/reason:text-violet-200 transition-colors">
+                      {company.matchReason.slice(0, 150)}
+                      {company.matchReason.length > 150 ? "..." : ""}
+                    </span>
+                    <ExternalLink className="inline h-3 w-3 ml-1 opacity-0 group-hover/reason:opacity-100 transition-opacity text-violet-400" />
+                  </p>
+                </a>
+              )
+              : (
+                <p className="text-xs text-slate-300 leading-relaxed bg-gradient-to-r from-violet-500/10 to-transparent p-2 rounded-lg border-l-2 border-violet-500/30">
+                  <Sparkles className="inline h-3 w-3 text-violet-400 mr-1" />
+                  {company.matchReason.slice(0, 150)}
+                  {company.matchReason.length > 150 ? "..." : ""}
+                </p>
+              )}
           </div>
         )}
 

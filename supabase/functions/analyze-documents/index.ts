@@ -74,11 +74,21 @@ Sois précis et exhaustif.`;
       documentText.slice(0, 150000)
     }`; // Limite à 150K chars
 
-    console.log("🧠 Calling Gemini 2.5 Flash for document analysis...");
+    console.log("🧠 Calling Gemini 2.5 Pro for document analysis...");
 
-    const result = await gemini.generateJSON(
+    interface Client {
+      company_name: string;
+      industry: string;
+      context: string;
+    }
+
+    interface AnalysisResult {
+      track_record: Client[];
+    }
+
+    const result = await gemini.generateJSON<AnalysisResult>(
       userPrompt,
-      "gemini-2.5-flash", // Using 2.5 Flash (confirmed available in API)
+      GEMINI_MODELS.PRO, // Using 2.5 Pro (The only allowed model)
       systemPrompt,
     );
 

@@ -118,6 +118,13 @@ export function RadarLayout() {
     return true;
   });
 
+  console.log(
+    "🔍 [RadarLayout] FILTERED COMPANIES:",
+    filteredCompanies.length,
+    "/",
+    companies.length,
+  );
+
   // Count buffer companies (discovered overnight)
   const bufferCompanies = companies.filter((c) =>
     c.analysisStatus === "buffer"
@@ -163,11 +170,8 @@ export function RadarLayout() {
 
   // Handle company sheet open (track view start) OR trigger analysis
   const handleCompanyClick = (company: Company) => {
-    // ON-DEMAND LOGIC: If discovered but not analyzed, trigger analysis
-    if (company.analysisStatus === "discovered" || !company.score) {
-      analyzeCompany(company);
-      return;
-    }
+    // Prevent double-clicking while analyzing
+    if (analyzingCompanyId === company.id) return;
 
     // Normal behavior: Open sheet
     viewStartTime.current = Date.now();
@@ -420,7 +424,7 @@ export function RadarLayout() {
             <ValidationMatrix
               identity={strategicIdentity}
               strategy={proposedStrategy}
-              onConfirm={() => executeStrategy()}
+              onConfirm={(queries: string[]) => executeStrategy(queries)}
               onCancel={() => resetRadar()}
               isExecuting={isExecuting}
             />

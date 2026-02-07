@@ -58,145 +58,159 @@ const agencySchema = {
 };
 
 Deno.serve(async (req) => {
+  // CONFIG: Timeout global de sécurité (50s pour laisser 10s de marge au timeout Supabase 60s)
+  const CONNECTION_TIMEOUT = 50000;
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const { websiteUrl, jobId } = await req.json();
+  // Initialisation anticipée pour le bloc catch
+  let supabaseClient: any = null;
+  let requestRecordId: string | null = null;
+  let currentStep = 0;
 
+  const logStep = (msg: string) => {
+    currentStep++;
+    console.log(`[STEP ${currentStep}] ${msg}`);
+  };
+
+  try {
+    logStep("Starting extraction process...");
+
+    // 1. SETUP ENV & CLIENTS
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY");
-    if (!firecrawlKey) {
-      throw new Error("FIRECRAWL_API_KEY not configured");
+
+    if (!supabaseUrl || !supabaseKey || !firecrawlKey) {
+      throw new Error("Missing API Keys configuration");
     }
 
-    // MODE 1: CHECK STATUS
+    supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+    // 2. PARSE REQUEST
+    const { websiteUrl, jobId, recordId } = await req.json();
+    requestRecordId = recordId; // Sauvegarde pour le catch
+
+    if (!websiteUrl && !jobId) {
+      throw new Error("Missing websiteUrl or jobId");
+    }
+
+    // MODE 1: CHECK JOB STATUS
     if (jobId) {
-      console.log(`📡 Checking Job Status: ${jobId}`);
+      logStep(`Checking Firecrawl Job Status: ${jobId}`);
+
       const statusResponse = await fetch(
         `https://api.firecrawl.dev/v2/agent/${jobId}`,
         {
           headers: { "Authorization": `Bearer ${firecrawlKey}` },
+          signal: AbortSignal.timeout(10000), // 10s max pour un check status
         },
       );
 
       if (!statusResponse.ok) {
-        throw new Error(`Failed to check status: ${statusResponse.status}`);
+        throw new Error(`Firecrawl Check Failed: ${statusResponse.status}`);
       }
 
       const statusData = await statusResponse.json();
-      console.log(`✅ Job Status: ${statusData.status}`);
+      logStep(`Job Status received: ${statusData.status}`);
 
-      // CACHE ON COMPLETION
-      if (statusData.status === "completed" && websiteUrl) {
-        try {
-          const normalizedUrl = websiteUrl.replace(/^https?:\/\/(www\.)?/, "")
-            .replace(/\/$/, "").toLowerCase();
-          console.log(
-            `💾 Caching result for ${normalizedUrl} to Global Knowledge...`,
-          );
+      // SUCCESS HANDLING
+      if (statusData.status === "completed") {
+        logStep("Job completed. Processing results...");
 
-          // Connect to Supabase using Service Role
-          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-          const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-          const supabase = createClient(supabaseUrl, supabaseKey);
+        // Update DB if recordId provided
+        if (recordId) {
+          logStep("Updating DB record to status: completed");
+          await supabaseClient.from("track_records").update({
+            status: "completed",
+            // On pourrait sauvegarder les résultats ici aussi si besoin
+            updated_at: new Date().toISOString(),
+          }).eq("id", recordId);
+        }
 
-          const cachePayload = {
-            agency_profile: statusData.data.agency_profile,
-            services_summary: statusData.data.services_summary,
-            track_record: statusData.data.track_record,
-          };
-
-          const { error: cacheError } = await supabase.from("global_url_cache")
-            .upsert({
+        // Cache Logic (Keep existing but wrapped safe)
+        if (websiteUrl) {
+          try {
+            const normalizedUrl = websiteUrl.replace(/^https?:\/\/(www\.)?/, "")
+              .replace(/\/$/, "").toLowerCase();
+            await supabaseClient.from("global_url_cache").upsert({
               url_domain: normalizedUrl,
-              scraped_data: cachePayload,
+              scraped_data: statusData.data,
               last_scanned_at: new Date().toISOString(),
             }, { onConflict: "url_domain" });
-
-          if (cacheError) console.error("Cache Insert DB Error:", cacheError);
-          else console.log("✅ Cached successfully.");
-        } catch (e) {
-          console.error("Cache Write Error (Ignoring):", e);
+          } catch (e) {
+            console.warn("Cache Warning:", e);
+          }
         }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            status: "completed",
+            data: statusData.data,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
       }
 
+      // ERROR HANDLING FROM FIRECRAWL
+      if (statusData.status === "failed") {
+        throw new Error(
+          `Firecrawl Job Failed: ${statusData.error || "Unknown error"}`,
+        );
+      }
+
+      // ACTIVE/WAITING STATUS
       return new Response(
-        JSON.stringify({
-          success: true,
-          status: statusData.status, // "active", "completed", "failed"
-          data: statusData.status === "completed"
-            ? {
-              agency_profile: statusData.data.agency_profile,
-              services_summary: statusData.data.services_summary,
-              track_record: statusData.data.track_record,
-            }
-            : null,
-          error: statusData.error,
-        }),
+        JSON.stringify({ success: true, status: statusData.status }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
     // MODE 2: START NEW JOB
     if (websiteUrl) {
+      logStep(`Initiating New Job for: ${websiteUrl}`);
+
+      // CACHE CHECK
       const normalizedUrl = websiteUrl.replace(/^https?:\/\/(www\.)?/, "")
         .replace(/\/$/, "").toLowerCase();
-      console.log(`🤖 Global Knowledge Check for: ${normalizedUrl}`);
+      const { data: cached } = await supabaseClient
+        .from("global_url_cache")
+        .select("scraped_data")
+        .eq("url_domain", normalizedUrl)
+        .single();
 
-      // 1. CHECK CACHE
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
+      if (cached) {
+        logStep("⚡️ CACHE HIT. Returning immediately.");
 
-      try {
-        const { data: cached } = await supabase
-          .from("global_url_cache")
-          .select("scraped_data")
-          .eq("url_domain", normalizedUrl)
-          .single();
-
-        if (cached) {
-          console.log(
-            `⚡️ CACHE HIT: Returning data from Global Knowledge for ${normalizedUrl}`,
-          );
-          return new Response(
-            JSON.stringify({
-              success: true,
-              status: "completed", // Fake completed status
-              data: cached.scraped_data,
-              cached: true,
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
+        if (recordId) {
+          await supabaseClient.from("track_records").update({
+            status: "completed",
+            updated_at: new Date().toISOString(),
+          }).eq("id", recordId);
         }
-      } catch (err) {
-        console.warn("Cache Check Failed (Proceeding to Scrape):", err);
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            status: "completed",
+            data: cached.scraped_data,
+            cached: true,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
       }
 
-      console.log(`🤖 Starting New Agent Job for: ${websiteUrl}`);
+      // FIRECRAWL LAUNCH
+      logStep("Sending request to Firecrawl Agent...");
 
       const agentPrompt =
         `Tu es un expert en analyse d'agences web. Ta mission : extraire TOUTES les informations stratégiques de ce site.
-  
-  OBJECTIF 1 - PROFIL DE L'AGENCE :
-  - Trouve leur tagline/slogan principal
-  - Identifie leur promesse de valeur unique
-  - Déduis leur client cible
-  
-  OBJECTIF 2 - SERVICES :
-  - Liste leurs expertises principales
-  
-  OBJECTIF 3 - TRACK RECORD (CLIENTS) :
-  - Cherche "Références", "Portfolio", "Clients"
-  - Repère les logos et études de cas
-  
-  RÈGLES D'EXCLUSION :
-  ❌ PAS de réseaux sociaux (YouTube, LinkedIn...)
-  ❌ PAS de technologies (AWS, React, Stripe...)
-  ❌ PAS de partenaires
-  
-  ✅ LISTE UNIQUEMENT : Les entreprises clientes réelles.`;
+OBJECTIF 1: Profil (tagline, value_proposition, target_audience)
+OBJECTIF 2: Services (liste expertises)
+OBJECTIF 3: Track Record (Clients réels, Logos, Portfolio) - EXCLURE partenaires et technos.`;
 
       const agentResponse = await fetch("https://api.firecrawl.dev/v2/agent", {
         method: "POST",
@@ -209,22 +223,31 @@ Deno.serve(async (req) => {
           urls: [websiteUrl],
           schema: agencySchema,
         }),
+        signal: AbortSignal.timeout(CONNECTION_TIMEOUT),
       });
 
       if (!agentResponse.ok) {
-        const errorText = await agentResponse.text();
+        const errText = await agentResponse.text();
         throw new Error(
-          `Firecrawl API Error: ${agentResponse.status} - ${errorText}`,
+          `Firecrawl Launch Failed: ${agentResponse.status} - ${errText}`,
         );
       }
 
       const agentData = await agentResponse.json();
-
       if (!agentData.success || !agentData.id) {
-        throw new Error("Agent job creation failed");
+        throw new Error("Firecrawl did not return a Job ID");
       }
 
-      console.log(`✅ Job Started: ${agentData.id}`);
+      logStep(`✅ Job Successfully Started: ${agentData.id}`);
+
+      // Update DB with Job ID
+      if (recordId) {
+        await supabaseClient.from("track_records").update({
+          firecrawl_job_id: agentData.id,
+          status: "processing",
+          updated_at: new Date().toISOString(),
+        }).eq("id", recordId);
+      }
 
       return new Response(
         JSON.stringify({
@@ -236,23 +259,32 @@ Deno.serve(async (req) => {
       );
     }
 
-    return new Response(
-      JSON.stringify({ success: false, error: "Missing websiteUrl or jobId" }),
-      {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
-  } catch (error) {
-    console.error("❌ Error:", error);
-    const errorMessage = error instanceof Error
-      ? error.message
-      : "Unknown error";
+    throw new Error("Invalid Request: No websiteUrl or jobId");
+  } catch (error: any) {
+    console.error(`❌ CRITICAL ERROR at Step ${currentStep}:`, error);
+
+    // ZOMBIE KILLER: Update DB on error
+    if (supabaseClient && requestRecordId) {
+      console.log(
+        `[RECOVERY] Updating record ${requestRecordId} to error status...`,
+      );
+      try {
+        await supabaseClient.from("track_records").update({
+          status: "error",
+          error_message: error.message || "Unknown Timeout/Error",
+          updated_at: new Date().toISOString(),
+        }).eq("id", requestRecordId);
+        console.log(`[RECOVERY] ✅ Record marked as error.`);
+      } catch (dbError) {
+        console.error(`[RECOVERY] 🚨 Failed to update DB:`, dbError);
+      }
+    }
 
     return new Response(
       JSON.stringify({
         success: false,
-        error: errorMessage,
+        error: error.message || "Internal Server Error",
+        step: currentStep,
       }),
       {
         status: 500,

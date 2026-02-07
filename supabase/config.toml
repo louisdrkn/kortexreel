@@ -131,3 +131,6 @@ verify_jwt = true
 
 [functions.hunt-clients]
 verify_jwt = true
+
+[functions.execute-radar]
+verify_jwt = false

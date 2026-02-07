@@ -42,6 +42,8 @@ export interface Company {
     | "enriched"
     | "discovered";
   analyzedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
   // PRECISION ENGINE V3: Dual Contact Structure
   decisionMaker?: DecisionMaker; // 👑 Contact Principal
   alternativeContact?: DecisionMaker; // 🛡️ Alternative Suggérée
@@ -50,6 +52,7 @@ export interface Company {
   validatedByCible?: boolean;
   validatedByCerveau?: boolean;
   matchReason?: string;
+  strategicCategory?: "PERFECT_MATCH" | "OPPORTUNITY" | "OUT_OF_SCOPE";
 }
 
 export interface DecisionMaker {

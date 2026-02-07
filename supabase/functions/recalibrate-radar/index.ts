@@ -8,7 +8,10 @@
  * - Filtrage anti-bruit (gouv, médias, etc.)
  */
 
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  SupabaseClient,
+} from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import {
   API_KEYS,
   GEMINI_MODELS,

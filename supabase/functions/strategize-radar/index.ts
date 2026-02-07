@@ -3,7 +3,11 @@
 // ============================================================================
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
+import {
+  GoogleGenerativeAI,
+  HarmBlockThreshold,
+  HarmCategory,
+} from "npm:@google/generative-ai@0.12.0";
 
 // ============================================================================
 // CORS UNIVERSEL (Le "Passe-Partout")
@@ -48,6 +52,10 @@ interface AgencyDNA {
   website?: string;
   pitch?: string;
   methodology?: string;
+  trackRecord?: {
+    pastClients?: { name: string; description?: string }[];
+    dreamClients?: string[];
+  };
   extractedContent?: {
     websiteContent?: string;
   };
@@ -61,200 +69,155 @@ interface DocumentRow {
 // ============================================================================
 // CONSTANTS - GEMINI MODEL
 // ============================================================================
-const GEMINI_MODEL = "gemini-2.0-flash-exp";
+const GEMINI_MODEL = "gemini-2.5-pro";
 
 // ============================================================================
 // SYSTEM INSTRUCTION (Draconian Truth Mode)
 // ============================================================================
 const SYSTEM_INSTRUCTION = `
-You are KORTEX, the Strategic Brain of Axole.
+You are KORTEX, an advanced Strategic AI Analyst.
 Your mission is to extract TRUTH from documents and synthesize actionable intelligence.
 
 CRITICAL RULES:
-1. NEVER invent information not present in the source documents
-2. ALWAYS cite exact quotes when making claims
-3. REJECT generic B2B marketing jargon
-4. USE technical lexicon from the provided PDFs
-5. OUTPUT ONLY VALID JSON - NO preamble, NO explanation
+1. PRIORITIZE source documents (PDFs) as the primary truth.
+2. IF PDFs are silent, USE the provided Agency Pitch and Methodology.
+3. REJECT generic B2B marketing jargon unless it reflects the source material.
+4. SYNTHESIZE clear, commercially viable sentences (don't just copy-paste fragments).
+5. OUTPUT ONLY VALID JSON - NO preamble, NO explanation.
 `;
 
 // ============================================================================
-// PROMPTS
+// UTILITY: KEY NORMALIZATION (Fix Case Sensitivity Bug)
+// ============================================================================
+/**
+ * Recursively normalizes all keys in an object to lowercase.
+ * This fixes the bug where Gemini returns keys like "Unique_Value_Proposition"
+ * instead of "unique_value_proposition", causing undefined values and "N/A" display.
+ *
+ * @param obj - The object to normalize (can be nested)
+ * @returns The same object with all keys converted to lowercase
+ */
+function normalizeKeys(obj: unknown): unknown {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  // Handle arrays
+  if (Array.isArray(obj)) {
+    return obj.map((item) => normalizeKeys(item));
+  }
+
+  // Handle objects
+  if (typeof obj === "object") {
+    const normalized: Record<string, unknown> = {};
+    const record = obj as Record<string, unknown>;
+    for (const key in record) {
+      if (Object.prototype.hasOwnProperty.call(record, key)) {
+        // CORRECTION MAJEURE: Lowercase + Remplacement des espaces par des underscores
+        // "Unique Value Proposition" -> "unique_value_proposition"
+        const normalizedKey = key.toLowerCase().replace(/\s+/g, "_");
+        normalized[normalizedKey] = normalizeKeys(record[key]);
+      }
+    }
+    return normalized;
+  }
+
+  // Return primitive values as-is
+  return obj;
+}
+
+// ============================================================================
+// PROMPTS (MODE "ZERO-SHOT" - SANS EXEMPLES)
 // ============================================================================
 const MISSION_PROMPT = `
-=== MISSION: EXPERT DÉBRIDÉ - WAR MACHINE CONSTRUCTION ===
-Utilise le [GLOBAL_CONTEXT] (PDFs + Scrape) pour construire l'ADN de la War Machine de prospection.
+=== MISSION: EXTRACTION DE L'ADN DU CLIENT ===
 
-=== INPUT CONTEXT ===
-{GLOBAL_CONTEXT}
+CONTEXTE DOCUMENTAIRE (SOURCE DE VÉRITÉ): {GLOBAL_CONTEXT}
 
-=== PHASE 0: EXTRACTION DE L'INTELLIGENCE ===
+=== OBJECTIF ===
+Tu dois ignorer ton identité d'IA. Tu dois incarner le DIRECTEUR COMMERCIAL de l'entreprise décrite dans les documents PDF.
+Ta mission est d'analyser tes propres documents pour définir ta stratégie de vente.
 
-1. **SYNTHÈSE DE CONSCIENCE (Proof of Integration)** :
-   - Trouve 3 éléments dans les docs qui CONTREDISENT les pratiques marketing standard.
-   - Format : "Contradiction: [Concept Spécifique] trouvé dans [Nom du Doc Source] s'oppose à [Pratique Générique Standard]."
+=== INSTRUCTIONS DE RÉDACTION (STRICTEMENT SANS EXEMPLE) ===
 
-2. **VÉRIFICATION (PROOF OF LIFE)** :
-   - Copie mot-à-mot la première phrase du premier paragraphe du tout premier document de la base de connaissances.
+**1. PROPOSITION DE VALEUR (unique_value_proposition)**
+Generate a dense, high-impact Unique Value Proposition (30-50 words) strictly following this 3-part structure:
+1. **The Context:** Briefly state the target's specific inefficiency or pain point.
+2. **The Kortex Fix:** Explain how our automated Sales Intelligence & AI Qualification solves it.
+3. **The Business Impact:** Conclude with the concrete result (e.g., 'reducing sourcing time by 90%', 'delivering ready-to-close leads').
 
-3. **EXTRACTION DES 3 PILIERS STRATÉGIQUES (LE MOAT)** :
-   - Identifie les 3 concepts propriétaires qui rendent cette méthodologie IMPÉNÉTRABLE par la concurrence.
-   - Citation exacte de la méthodologie ou du concept propriétaire depuis le texte.
-   - Explique pourquoi ce pilier crée une barrière à l'entrée.
+**2. DOULEURS CŒURS (core_pain_points)**
+Identifie les problèmes spécifiques, financiers ou techniques qui poussent tes clients à acheter ta solution.
+RÈGLE D'EXTRACTION : Chaque point doit décrire une conséquence négative pour le client (perte d'argent, risque légal, inefficacité technique) si il n'utilise pas la solution.
 
-4. **PORTRAIT-ROBOT TECHNIQUE (The Perfect Fit)** :
-   - Qui souffre de l'ABSENCE de ces 3 piliers ?
-   - Définis-les avec le lexique technique des documents.
+**3. PROFIL PROSPECT (ideal_prospect_profile)**
+Définis précisément qui est le signataire du contrat.
+RÈGLE : Combine obligatoirement ces trois éléments :
+1. L'intitulé de poste exact du décideur (Job Title).
+2. Le secteur d'activité industriel précis (Industry).
+3. La taille ou la typologie de l'entreprise cible (Size/Type).
 
-5. **IDENTIFICATION DES SYMPTÔMES TECHNIQUES (ANTI-PATTERNS)** :
-   - Selon la Section II des PDF (si présente), quels sont les 3 signaux d'erreurs RÉELS à traquer ?
-   - Ces symptômes doivent être observables, mesurables et techniques.
+**4. CRITÈRES D'EXCLUSION (exclusion_criteria)**
+Définis qui ne peut PAS être client (basé sur des contraintes techniques ou budgétaires trouvées dans les textes).
 
-=== OUTPUT JSON STRUCTURE ===
+=== OUTPUT JSON ===
 {
-  "verification_citation": "Citation exacte mot-à-mot de la première phrase du premier document...",
-  "consciousness_summary": [
-     "Contradiction 1: [Concept] trouvé dans [Doc X] s'oppose à [Pratique Standard]",
-     "Contradiction 2: ...",
-     "Contradiction 3: ..."
-  ],
-  "strategic_pillars": [
-    { 
-      "name": "Terme Exact du Doc", 
-      "description": "Analyse du MOAT: Pourquoi ce pilier est une barrière à l'entrée"
-    },
-    { "name": "...", "description": "..." },
-    { "name": "...", "description": "..." }
-  ],
-  "unique_value_proposition": "Proposition de valeur synthétisée basée sur les 3 Piliers.",
-  "core_pain_points": [
-    "Douleur liée au Pilier 1", 
-    "Douleur liée au Pilier 2", 
-    "Douleur liée au Pilier 3"
-  ],
-  "ideal_prospect_profile": "Portrait-Robot détaillé utilisant le lexique technique des documents",
-  "exclusion_criteria": "Critères de disqualification basés sur la compatibilité méthodologique",
-  "observable_symptoms": [
-     "Symptôme 1 (Anti-Pattern observable)", 
-     "Symptôme 2 (Anti-Pattern mesurable)",
-     "Symptôme 3 (Anti-Pattern technique)"
-  ]
+  "unique_value_proposition": "La phrase construite selon la syntaxe imposée",
+  "core_pain_points": ["Douleur spécifique 1", "Douleur spécifique 2", "Douleur spécifique 3"],
+  "ideal_prospect_profile": "Définition précise du décideur cible",
+  "exclusion_criteria": "Typologie d'entreprises à ne pas contacter",
+  "observable_symptoms": ["Signal externe visible 1", "Signal externe visible 2"],
+  "verification_citation": "Une citation exacte du PDF qui justifie ton analyse",
+  "consciousness_summary": [],
+  "strategic_pillars": []
 }
-
-=== CRITICAL FORMATTING RULES (DO NOT IGNORE) ===
-FOR THE FIELD 'unique_value_proposition':
-
-STRICTLY FORBIDDEN: You must NEVER start with "🧠", "CONSCIOUSNESS SUMMARY", "Analysis", or "Source:".
-
-STRICTLY FORBIDDEN: Do not explain how you found the answer. Do not cite the PDF sections.
-
-STRICTLY FORBIDDEN: Do not include the consciousness_summary content in this field.
-
-REQUIRED FORMAT: Output ONLY the final client-facing marketing pitch.
-
-LENGTH LIMIT: Maximum 2 powerful sentences.
-
-Example of BAD output: "🧠 Analysis: The PDF mentions X, so we should do Y..."
-Example of GOOD output: "Nous transformons votre cycle de vente imprévisible en une machine d'acquisition systémique qui cible exclusivement les décideurs."
 `;
 
+const GLOBAL_KILL_SWITCH =
+  " -site:linkedin.com -site:indeed.fr -site:greenhouse.io -site:lever.co -site:wttj.co -site:youtube.com -site:facebook.com -site:twitter.com -site:instagram.com -site:tiktok.com -emploi -recrutement -stage -alternance -candidature -blog -article -definition -tuto -formation -classement -top10 -annuaire -listing -comparatif -wiki -forum";
+
 const STRATEGY_PROMPT = `
-[SYSTEM: KORTEX STRATÈGE SENIOR AXOLE]
-MODE: GÉNÉRATION DE STRATÉGIE DE PROSPECTION B2B
+[SYSTEM: KORTEX COMMANDER - "SINGLE REQUEST AGENT PROTOCOL" ACTIVATED]
 
-=== RÔLE ===
-Tu es le Stratège Senior Axole. Ton but est de générer une stratégie de prospection pour cibler des DÉCIDEURS et des ENTREPRISES, pas des exécutants ni des offres d'emploi.
+*** OBJECTIVE: SPEED OPTIMIZATION (MASTER PROMPT) ***
+Running multiple small queries takes too long.
+You must UNIFY the strategy into ONE comprehensive "Master Mission" per Key Client.
 
-=== STRATEGIC IDENTITY (TARGET COMPANY) ===
+CONTEXT (OFFER):
 {IDENTITY_JSON}
 
-=== RÈGLES LOGIQUES STRICTES ===
+SOURCES (PAST CLIENTS):
+{PAST_CLIENTS}
 
-**RÈGLE 1 : CIBLAGE (Plan de Chasse - queries)**
+**STEP 0: SELECT THE "SOURCE OF TRUTH" (3 LEADERS)**
+Analyze the past clients. Pick the TOP 3 most relevant "Leaders" that represent the Perfect Target.
 
-INTERDIT ABSOLU : Les termes suivants sont BANNIS de toutes les requêtes :
-- "Glassdoor"
-- "Indeed"
-- "Recrutement"
-- "Offre d'emploi"
-- "Candidat"
-- "Business Developer"
-- "Sales Representative"
-- "Poste à pourvoir"
-- Tout terme lié aux RH ou à l'emploi
+**STEP 1: GENERATE THE MASTER PROMPT (1 PER LEADER)**
+For EACH selected Leader, write A SINGLE, RICH INSTRUCTION in English using "OR" logic to cover all angles at once.
 
-OBLIGATOIRE : Cible les TITRES DE DÉCISION uniquement :
-- CEO, Founder, Co-Founder
-- DG, Directeur Général
-- VP Sales, VP Marketing, VP Operations
-- Directeur Industriel, Directeur Commercial
-- C-Level executives
+**TEMPLATE:**
+"Find at least 35 companies in [Region] that are EITHER direct competitors of [Leader], OR operational peers sharing similar industrial facilities (like [Specific Asset]), OR businesses with matching needs for [Solution]. They MUST be active commercial entities. Priority to companies resembling [Leader] in structure and size. EXCLUDE: directories, news, finance, and [Leader] itself. You MUST navigate to the 2nd and 3rd pages of search results to meet the quota of 35. Do not stop until you have gathered enough candidates. If you cannot find 35 perfect matches after searching, return as many as you found (e.g., 28 is better than 0). Do NOT fail the task. Return the JSON list with whatever you have."
 
-STRUCTURE DES REQUÊTES : Utilise des opérateurs Google précis pour trouver des ENTREPRISES et des DÉCIDEURS.
+**STEP 2: RULES OF ENGAGEMENT**
+*   **LANGUAGE**: ENGLISH ONLY.
+*   **LOGIC**: Use "OR" to combine the [Direct], [Technical], and [Mirror] vectors.
+*   **QUANTITY**: Ask for "at least 35 companies" in each brief.
 
-FORMAT CORRECT (exemples de structure) :
-- site:linkedin.com/in/ intitle:"CEO" AND "secteur du client"
-- site:societe.com "secteur activité" AND "chiffre d'affaires"
-- site:linkedin.com/company/ "industrie cible" AND "nombre employés"
-- "Directeur Général" AND "secteur" AND "problème identifié"
-- intitle:"Founder" site:crunchbase.com "industrie"
-
-OBJECTIF : Trouve des ENTREPRISES qui correspondent au profil, pas des avis d'employés ou des offres d'emploi.
-
-**RÈGLE 2 : DOULEUR (Pain Points)**
-
-EXTRACTION : Extrais les problèmes structurels du PDF uniquement.
-
-EXEMPLES DE BONNES DOULEURS :
-- "Perte de marge opérationnelle"
-- "Processus manuel inefficace"
-- "Dépendance à des systèmes obsolètes"
-- "Fragmentation des données"
-
-INTERDIT : Douleurs génériques comme "manque de temps", "besoin de croissance", "recherche de talents".
-
-FORMAT : Chaque pain point doit être un problème observable et mesurable que le PDF dénonce explicitement.
-
-**RÈGLE 3 : SORTIE (Value Proposition)**
-
-INTERDIT : Pas de méta-commentaires internes (Consciousness Summary, Analysis, Source, etc.).
-
-FORMAT OBLIGATOIRE : Une phrase choc structurée ainsi :
-"Nous aidons [CIBLE PRÉCISE] à [RÉSULTAT MESURABLE] en supprimant [DOULEUR SPÉCIFIQUE]."
-
-VOCABULAIRE : Utilise uniquement les termes techniques présents dans les PDF Axole.
-
-=== OUTPUT JSON STRUCTURE ===
+=== OUTPUT JSON ===
 {
-  "value_proposition": "Phrase choc sans méta-commentaire",
-  "core_pain_points": [
-    "Problème structurel 1 extrait du PDF",
-    "Problème structurel 2 extrait du PDF",
-    "Problème structurel 3 extrait du PDF"
+  "value_proposition": "Focus on high-value operational targets",
+  "identified_clusters": [
+    { "name": "Master Strategy", "description": "Unified approach per leader", "representative_clients": ["Sanofi"] }
   ],
   "queries": [
-    "Requête 1 ciblant entreprises/décideurs (pas de job boards)",
-    "Requête 2 ciblant entreprises/décideurs (pas de job boards)",
-    "Requête 3 ciblant entreprises/décideurs (pas de job boards)",
-    "Requête 4 ciblant entreprises/décideurs (pas de job boards)",
-    "Requête 5 ciblant entreprises/décideurs (pas de job boards)"
+    // Sanofi Master Prompt
+    "Find at least 35 companies in Western Europe that are EITHER direct pharmaceutical competitors of Sanofi, OR CDMOs with sterile injectable manufacturing lines, OR large industrial sites requiring strict HVAC compliance. Priority to factories similar to Sanofi's production sites. EXCLUDE: Sanofi, directories, recruitment agencies, and news sites. You MUST navigate to the 2nd and 3rd pages of search results to meet the quota of 35. Do not stop until you have gathered enough candidates. If you cannot find 35 perfect matches after searching, return as many as you found (e.g., 28 is better than 0). Do NOT fail the task. Return the JSON list with whatever you have.",
+    
+    // SNCF Master Prompt
+    "Find at least 35 companies in France that are EITHER railway maintenance providers competing with SNCF, OR heavy industries with rolling stock MRO workshops, OR public transport operators creating predictive maintenance tenders. EXCLUDE: SNCF, ticket sales platforms, and government blogs. You MUST navigate to the 2nd and 3rd pages of search results to meet the quota of 35. Do not stop until you have gathered enough candidates. If you cannot find 35 perfect matches after searching, return as many as you found (e.g., 28 is better than 0). Do NOT fail the task. Return the JSON list with whatever you have."
   ],
-  "synthesis_proof": "Explication de la synthèse entre PDF et Identity"
+  "synthesis_proof": "I selected 3 Leaders. I generated 1 concatenated Master Prompt for each."
 }
-
-=== CRITICAL FORMATTING RULES (DO NOT IGNORE) ===
-FOR THE FIELD 'unique_value_proposition':
-
-STRICTLY FORBIDDEN: You must NEVER start with "🧠", "CONSCIOUSNESS SUMMARY", "Analysis", or "Source:".
-
-STRICTLY FORBIDDEN: Do not explain how you found the answer. Do not cite the PDF sections.
-
-REQUIRED FORMAT: Output ONLY the final client-facing marketing pitch.
-
-LENGTH LIMIT: Maximum 2 powerful sentences.
-
-Example of BAD output: "🧠 Analysis: The PDF mentions X, so we should do Y..."
-Example of GOOD output: "Nous transformons votre cycle de vente imprévisible en une machine d'acquisition systémique qui cible exclusivement les décideurs."
 `;
 
 // ============================================================================
@@ -287,34 +250,156 @@ async function scrapeClientSite(url: string, apiKey: string): Promise<string> {
   return "";
 }
 
-async function generateJSON<T>(
+async function generateJSONWithRetry<T>(
   gemini: GoogleGenerativeAI,
   prompt: string,
   systemInstruction: string,
-): Promise<T | null> {
-  try {
-    const model = gemini.getGenerativeModel({
-      model: GEMINI_MODEL,
-      systemInstruction,
-      generationConfig: {
-        temperature: 0.0,
-        responseMimeType: "application/json",
+  _maxRetries = 3,
+): Promise<T> {
+  // 2. CONFIGURATION "FORCE BRUTE" (Safety OFF)
+  // Adapting user code to keep functionality:
+  // Prepending system instruction as 0.12.0 might not support it in config
+  // and removing responseMimeType as it is likely not supported in 0.12.0
+  const fullPrompt = `${systemInstruction}\n\n${prompt}`;
+
+  const model = gemini.getGenerativeModel({
+    model: GEMINI_MODEL, // gemini-2.5-pro (Defined in constants)
+    safetySettings: [
+      {
+        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
       },
-    });
+      {
+        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+      },
+    ],
+  });
 
-    const result = await model.generateContent(prompt);
+  try {
+    console.log("🕵️ Lancement Gemini (Force Brute)...");
+    const result = await model.generateContent(fullPrompt);
     const response = result.response;
-    const text = response.text();
 
+    // 3. LE MOUCHARD (Loggue la raison exacte du stop)
+    // CORRECT structure for @google/generative-ai@0.12.0
+    const candidate = response.candidates?.[0];
+    console.log("🕵️ Finish Reason:", candidate?.finishReason || "UNKNOWN");
+    console.log(
+      "🕵️ Safety Ratings:",
+      JSON.stringify(candidate?.safetyRatings || []),
+    );
+    console.log(
+      "🕵️ Block Reason:",
+      response.promptFeedback?.blockReason || "NONE",
+    );
+
+    // Log full response for debugging
+    console.log(
+      "🕵️ Full Response Structure:",
+      JSON.stringify({
+        finishReason: candidate?.finishReason,
+        blockReason: response.promptFeedback?.blockReason,
+        hasText: !!candidate?.content?.parts?.[0]?.text,
+      }),
+    );
+
+    const text = response.text();
     if (!text) {
-      console.error("[GEMINI] Empty response");
-      return null;
+      console.error("🚨 ERREUR: Réponse vide");
+      console.error("🚨 Finish Reason:", candidate?.finishReason);
+      console.error(
+        "🚨 Safety Ratings:",
+        JSON.stringify(candidate?.safetyRatings),
+      );
+      throw new Error(
+        `Réponse vide - Finish Reason: ${candidate?.finishReason || "UNKNOWN"}`,
+      );
     }
 
-    return JSON.parse(text) as T;
+    // Nettoyage JSON standard (Keeping robust cleaning)
+    const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
+
+    // 4. PARSING FINAL
+    const firstBrace = cleanJson.indexOf("{");
+    const lastBrace = cleanJson.lastIndexOf("}");
+
+    if (firstBrace === -1 || lastBrace === -1) {
+      throw new Error("No JSON structure ({...}) found in response");
+    }
+
+    const finalJson = cleanJson.substring(firstBrace, lastBrace + 1);
+    const parsedJson = JSON.parse(finalJson);
+
+    // CRITICAL FIX: Normalize all keys to lowercase
+    // This fixes the bug where Gemini returns "Unique_Value_Proposition"
+    // instead of "unique_value_proposition", causing N/A display
+    const normalizedJson = normalizeKeys(parsedJson);
+
+    console.log("🔧 JSON keys normalized to lowercase");
+    return normalizedJson as T;
   } catch (error) {
-    console.error("[GEMINI] Generation failed:", error);
-    return null;
+    // 4. RAPPORT D'AUTOPSIE - DIAGNOSTIC COMPLET
+    console.error("🚨 ERREUR DÉTAILLÉE:", error);
+
+    // Extract error message for analysis
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorString = JSON.stringify(error);
+
+    // CAS A: [400] API key not valid
+    if (
+      errorMessage.includes("400") ||
+      errorMessage.includes("API key not valid") ||
+      errorMessage.includes("invalid")
+    ) {
+      console.error("🚨 CAS A DÉTECTÉ: [400] API key not valid");
+      console.error(
+        "🚨 SOLUTION: Vérifier GEMINI_API_KEY dans les secrets Supabase",
+      );
+      console.error("🚨 Commande: npx supabase secrets set --env-file .env");
+    }
+
+    // CAS B: [429] Quota exceeded
+    if (
+      errorMessage.includes("429") || errorMessage.includes("quota") ||
+      errorMessage.includes("RESOURCE_EXHAUSTED")
+    ) {
+      console.error("🚨 CAS B DÉTECTÉ: [429] Quota exceeded");
+      console.error("🚨 SOLUTION: Attendre ou changer de clé Google API");
+    }
+
+    // CAS C: Finish Reason: SAFETY
+    if (errorMessage.includes("SAFETY") || errorString.includes("SAFETY")) {
+      console.error(
+        "🚨 CAS C DÉTECTÉ: Finish Reason: SAFETY (Blocage sécurité)",
+      );
+      console.error(
+        "🚨 SOLUTION: Adoucir le prompt (éviter mots agressifs comme 'Chasse', 'Tuer')",
+      );
+    }
+
+    // CAS D: User location is not supported
+    if (
+      errorMessage.includes("location") ||
+      errorMessage.includes("not supported") || errorMessage.includes("region")
+    ) {
+      console.error("🚨 CAS D DÉTECTÉ: User location is not supported");
+      console.error("🚨 SOLUTION: Changer la région du serveur Supabase");
+    }
+
+    // Log the full error for any other cases
+    console.error("🚨 Message d'erreur complet:", errorMessage);
+    console.error("🚨 Erreur stringifiée:", errorString);
+
+    throw error;
   }
 }
 
@@ -330,7 +415,7 @@ serve(async (req: Request): Promise<Response> => {
   try {
     // 2. RÉCUPÉRATION SÉCURISÉE DU BODY
     const requestData = await req.json() as StrategizeRequest;
-    const { projectId, force_analyze } = requestData;
+    const { projectId, force_analyze: _force_analyze } = requestData;
 
     if (!projectId) {
       throw new Error("Missing projectId");
@@ -354,7 +439,7 @@ serve(async (req: Request): Promise<Response> => {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const gemini = new GoogleGenerativeAI(geminiApiKey);
 
-    // 4. FETCH CONTEXT
+    // 4. FETCH CONTEXT (Now with DEEP MEMORY)
     console.log(`[STRATEGIZE] 🧩 Aggregating Context...`);
 
     const { data: projectData, error: projectError } = await supabase
@@ -370,27 +455,79 @@ serve(async (req: Request): Promise<Response> => {
       d.data_type === "agency_dna"
     )?.data as AgencyDNA) || ({} as AgencyDNA);
 
+    const targetCriteria = (projectData?.find((d: ProjectDataRow) =>
+      d.data_type === "target_criteria"
+    )?.data) || {};
+
+    // DEEP MEMORY FETCH
     const { data: documentsData, error: docsError } = await supabase
       .from("company_documents")
-      .select("file_name, extracted_content")
+      .select(`
+        file_name, 
+        extracted_content,
+        document_insights (
+          extracted_prospects,
+          specific_pain_points,
+          success_metrics
+        )
+      `)
       .eq("project_id", projectId)
       .eq("extraction_status", "completed");
 
-    if (docsError) console.warn("Docs fetch warning:", docsError);
+    if (docsError) {
+      console.warn("Docs fetch warning:", docsError);
+    }
 
     const pitch = agencyDNA.pitch || "";
     const methodology = agencyDNA.methodology || "";
     const websiteContent = agencyDNA.extractedContent?.websiteContent || "";
 
-    const docsText = documentsData?.map((d: DocumentRow) =>
-      `--- DOCUMENT: ${d.file_name} ---\n${
+    // DEEP MEMORY AGGREGATION
+    let deepMemoryHighlights = "";
+    const extractedProspects: string[] = [];
+    const technicalPainPoints: string[] = [];
+
+    const docsText = documentsData?.map((d: any) => {
+      // Aggregate Deep Memory
+      if (d.document_insights && d.document_insights.length > 0) {
+        const insights = d.document_insights[0]; // 1-to-1 relation
+
+        if (insights.extracted_prospects?.length) {
+          insights.extracted_prospects.forEach((p: any) =>
+            extractedProspects.push(`${p.name} (${p.context})`)
+          );
+        }
+        if (insights.specific_pain_points?.length) {
+          insights.specific_pain_points.forEach((pp: any) =>
+            technicalPainPoints.push(`${pp.problem}: ${pp.technical_detail}`)
+          );
+        }
+      }
+
+      return `--- DOCUMENT: ${d.file_name} ---\n${
         d.extracted_content?.substring(0, 500000) || ""
-      }`
-    ).join("\n\n") || "";
+      }`;
+    }).join("\n\n") || "";
+
+    // Format Deep Memory for Prompt
+    if (extractedProspects.length > 0 || technicalPainPoints.length > 0) {
+      deepMemoryHighlights = `
+      === 💎 DEEP MEMORY (INTELLIGENCE OR PUR) ===
+      Ceci est la vérité terrain extraite des documents techniques. C'est plus important que le pitch.
+      
+      [CLIENTS & MODÈLES CITÉS]
+      ${extractedProspects.join("\n")}
+      
+      [PROBLÈMES TECHNIQUES EXACTS (PAIN POINTS)]
+      ${technicalPainPoints.join("\n")}
+      `;
+    }
 
     let fullText = `
     === KNOWLEDGE BASE (PRIMARY SOURCE OF TRUTH) ===
     ${docsText}
+
+    ${deepMemoryHighlights}
 
     === AGENCY PITCH ===
     ${pitch}
@@ -404,6 +541,25 @@ serve(async (req: Request): Promise<Response> => {
 
     console.log(`[STRATEGIZE] 📏 Context length: ${fullText.length} chars`);
     console.log(`[STRATEGIZE] 📄 Documents: ${documentsData?.length || 0}`);
+
+    // --- LEAKAGE DIAGNOSTICS START ---
+    const contextPreview = fullText.substring(0, 500);
+    console.log(
+      `[DIAGNOSTIC] Context Preview (First 500 chars):\n${contextPreview}`,
+    );
+
+    if (
+      fullText.toLowerCase().includes("axole") ||
+      pitch.toLowerCase().includes("axole") ||
+      websiteContent.toLowerCase().includes("axole")
+    ) {
+      console.warn(
+        `[DIAGNOSTIC] ⚠️ CRITICAL: 'Axole' keyword detected in context for project ${projectId}`,
+      );
+    } else {
+      console.log(`[DIAGNOSTIC] ✅ Context appears clean of 'Axole'`);
+    }
+    // --- LEAKAGE DIAGNOSTICS END ---
 
     // BLACK HOLE CHECK
     if (!docsText || docsText.trim().length === 0) {
@@ -431,7 +587,7 @@ serve(async (req: Request): Promise<Response> => {
 
     // 5. CHECK EXISTING IDENTITY
     let identity: StrategicIdentity | null = null;
-    if (!force_analyze) {
+    if (false) { // FORCE ANALYZE ALWAYS ACTIVE FOR DEBUG
       const { data: existing } = await supabase
         .from("strategic_identities")
         .select("*")
@@ -454,34 +610,22 @@ serve(async (req: Request): Promise<Response> => {
         safeContext,
       );
 
-      const identityJson = await generateJSON<StrategicIdentity>(
+      const identityJson = await generateJSONWithRetry<StrategicIdentity>(
         gemini,
         finalMissionPrompt,
         SYSTEM_INSTRUCTION,
       );
 
-      if (!identityJson) {
-        throw new Error("Gemini returned empty identity");
-      }
+      // if (!identityJson) handled by throw in retry function
 
       console.log(
         `[STRATEGIZE] 🕵️ Verification: "${identityJson.verification_citation}"`,
       );
 
-      // Save to DB
-      const consciousnessLog =
-        identityJson.consciousness_summary?.join("\n- ") || "No summary";
-      const pillarsSummary =
-        identityJson.strategic_pillars?.map((p: StrategicPillar) =>
-          `[${p.name}]`
-        ).join(" + ") || "";
-
-      const expertValueProp =
-        `🧠 CONSCIOUSNESS SUMMARY:\n- ${consciousnessLog}\n\n🔥 PILLARS:\n${pillarsSummary}\n\n${identityJson.unique_value_proposition}`;
-
+      // NETTOYAGE TOTAL - Plus de pollution philosophique
       const dbPayload = {
         project_id: projectId,
-        unique_value_proposition: expertValueProp,
+        unique_value_proposition: identityJson.unique_value_proposition, // Plus de concaténation
         core_pain_points: identityJson.core_pain_points,
         ideal_prospect_profile: identityJson.ideal_prospect_profile,
         exclusion_criteria: identityJson.exclusion_criteria,
@@ -503,25 +647,48 @@ serve(async (req: Request): Promise<Response> => {
 
     // 7. GENERATE STRATEGY
     console.log(`[STRATEGIZE] ⚔️ Generating Queries...`);
-    const finalStrategyPrompt = STRATEGY_PROMPT.replace(
-      "{IDENTITY_JSON}",
-      JSON.stringify(identity, null, 2),
-    );
+    const pastClientsList = agencyDNA.trackRecord?.pastClients?.map((c) =>
+      c.name
+    ) || [];
+    const pastClientsStr = pastClientsList.length > 0
+      ? pastClientsList.join(", ")
+      : "None provided (Use broad industry knowledge)";
 
-    const strategyJson = await generateJSON<{
+    const finalStrategyPrompt = STRATEGY_PROMPT
+      .replace("{IDENTITY_JSON}", JSON.stringify(identity, null, 2))
+      .replace("{PAST_CLIENTS}", pastClientsStr)
+      .replace("{TARGET_CRITERIA}", JSON.stringify(targetCriteria, null, 2))
+      .replace("{DEEP_MEMORY}", deepMemoryHighlights); // INJECTING GOLD NUGGETS
+
+    const strategyJson = await generateJSONWithRetry<{
       value_proposition?: string;
       core_pain_points?: string[];
       queries?: string[];
       synthesis_proof?: string;
     }>(gemini, finalStrategyPrompt, SYSTEM_INSTRUCTION);
 
-    if (!strategyJson) {
-      throw new Error("Strategy generation returned null");
-    }
+    // if (!strategyJson) handled by throw in retry function
 
     if (!strategyJson.queries || !Array.isArray(strategyJson.queries)) {
       throw new Error("Strategy response missing 'queries' field");
     }
+
+    // ========================================================================
+    // GLOBAL KILL SWITCH ENFORCEMENT
+    // ========================================================================
+    console.log(
+      `[STRATEGIZE] 🛡️ Applying GLOBAL KILL SWITCH to ${strategyJson.queries.length} queries...`,
+    );
+
+    strategyJson.queries = strategyJson.queries.map((q) => {
+      // 1. Remove any existing overlapping exclusion to avoid double-negative mess
+      let cleanQ = q.replace(/-site:linkedin\.com/g, "")
+        .replace(/-emploi/g, "")
+        .trim();
+
+      // 2. Append the HARDCODED Kill Switch
+      return `${cleanQ}${GLOBAL_KILL_SWITCH}`;
+    });
 
     console.log(
       `[STRATEGIZE] ✅ Success - ${strategyJson.queries.length} queries generated`,
@@ -533,6 +700,19 @@ serve(async (req: Request): Promise<Response> => {
         success: true,
         identity: identity,
         strategy: strategyJson,
+        diagnostics: {
+          pdf_char_count: docsText.length,
+          pitch_char_count: pitch.length,
+          website_char_count: websiteContent.length,
+          doc_files: documentsData?.map((d) => d.file_name) || [],
+          // --- LEAKAGE DIAGNOSTICS ---
+          used_context_preview: fullText.substring(0, 1000) + "...",
+          agency_dna_snapshot: {
+            pitch_preview: pitch.substring(0, 200),
+            website_url: agencyDNA.website,
+            website_content_preview: websiteContent.substring(0, 200),
+          },
+        },
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -540,8 +720,8 @@ serve(async (req: Request): Promise<Response> => {
       },
     );
   } catch (error: unknown) {
-    // 9. FILET DE SÉCURITÉ (Catch-All)
-    console.error("[STRATEGIZE] 🔥 CRITICAL ERROR:", error);
+    // 9. ERROR HANDLING (Fail Explicitly)
+    console.error("[STRATEGIZE] 🚨 Critical Error:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     return new Response(

@@ -1,5 +1,5 @@
 -- Enable pgvector extension if not already enabled
-CREATE EXTENSION IF NOT EXISTS vector;
+-- CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Create company_document_chunks table
 CREATE TABLE IF NOT EXISTS public.company_document_chunks (
