@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { ArrowRight, Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
 import { z } from "zod";
+import neonBrain from "@/assets/kortex-brain-neon.png";
 
 const emailSchema = z.string().email("Adresse email invalide");
 const passwordSchema = z.string().min(
@@ -119,8 +120,8 @@ export default function Auth() {
         {/* Logo Integration */}
         <div className="flex flex-col items-center animate-in fade-in slide-in-from-top-4 duration-700">
           <img
-            src="/src/assets/kortex-logo-gradient.png"
-            alt="Kortex Logo"
+            src={neonBrain}
+            alt="Kortex Brain"
             className="h-24 object-contain drop-shadow-[0_0_15px_rgba(99,102,241,0.5)]"
           />
         </div>
