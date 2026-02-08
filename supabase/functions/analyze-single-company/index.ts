@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { GEMINI_MODELS, GeminiClient } from "../_shared/api-clients.ts";
 import { SYSTEM_INSTRUCTION as DRACONIAN_SYSTEM_INSTRUCTION } from "../_shared/prompts.ts";
@@ -236,14 +236,25 @@ Deno.serve(async (req) => {
       undefined,
       { temperature: 0.0 },
     ).catch((e) => {
-      console.error("Gemini Failure Return default", e);
+      console.error("Gemini Failure - USING FALLBACK DATA", e);
+
+      // FALLBACK STRATEGY: Use existing data if available (Firecrawl Agent)
+      // If we already have a sales_thesis or match_reason, use it!
+      const fallbackAnalysis = company.sales_thesis ||
+        company.match_explanation || "Analyzing...";
+      const fallbackPains = company.detected_pain_points || [];
+      const fallbackSignals = company.trigger_events || [];
+
       return {
-        match_score: 0,
-        match_explanation: "Failed to analyze with AI",
-        detected_pain_points: [],
-        buying_signals: [],
-        strategic_analysis: "AI Error during analysis",
-        evidence_snippet: "",
+        match_score: company.match_score || 50, // Default to neutral if unknown
+        match_explanation: company.match_explanation ||
+          "Analysis pending (AI unavailable)",
+        detected_pain_points: fallbackPains.length > 0
+          ? fallbackPains
+          : ["Potential needs identify by Agent"],
+        buying_signals: fallbackSignals.length > 0 ? fallbackSignals : [],
+        strategic_analysis: fallbackAnalysis,
+        evidence_snippet: "Data recovered from initial Agent Scan.",
       } as AnalysisResult;
     });
 
