@@ -249,6 +249,23 @@ export function RadarProvider({ children }: { children: ReactNode }) {
                     }
                 }
 
+                // NEW: Extract Activity from custom_hook if available
+                let activity = undefined;
+                if (row.custom_hook) {
+                    try {
+                        const hookData = typeof row.custom_hook === "string"
+                            ? JSON.parse(row.custom_hook)
+                            : row.custom_hook;
+                        if (hookData?.original_activity) {
+                            activity = hookData.original_activity;
+                        } else if (hookData?.activity) {
+                            activity = hookData.activity;
+                        }
+                    } catch (e) {
+                        // Ignore
+                    }
+                }
+
                 // FRONTEND FALLBACKS:
                 // 1. Name: If "Unknown" or missing, use Domain Name
                 let finalName = row.company_name;
@@ -314,7 +331,10 @@ export function RadarProvider({ children }: { children: ReactNode }) {
                             !row.custom_hook.startsWith("{")
                         ? row.custom_hook
                         : undefined,
+
                     matchExplanation: row.match_explanation,
+                    context: row.match_explanation, // Map context
+                    activity: activity, // Map activity
                     analysisStatus: row
                         .analysis_status as Company["analysisStatus"],
                     analyzedAt: row.analyzed_at,
@@ -446,7 +466,19 @@ export function RadarProvider({ children }: { children: ReactNode }) {
                                     matchExplanation: record.match_explanation,
                                     descriptionLong: record.description_long ||
                                         record.strategic_analysis,
+
                                     strategicCategory,
+                                    // Map real-time fields
+                                    context: record.match_explanation,
+                                    activity: record.custom_hook &&
+                                            typeof record.custom_hook ===
+                                                "string" &&
+                                            record.custom_hook.includes(
+                                                "original_activity",
+                                            )
+                                        ? JSON.parse(record.custom_hook)
+                                            .original_activity
+                                        : undefined,
                                 } as Company;
                             };
 

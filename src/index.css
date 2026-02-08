@@ -74,60 +74,52 @@
   }
 
   .dark {
-    --background: 224 50% 6%;
-    --foreground: 210 40% 98%;
+    /* TACTICAL HUD THEME - Deep Zinc & Glass */
+    --background: 240 10% 3.9%; /* Zinc 950 */
+    --foreground: 0 0% 98%;
 
-    --card: 224 50% 8%;
-    --card-foreground: 210 40% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 224 50% 8%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 238 84% 65%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 263.4 70% 50.4%; /* Deep Violet */
+    --primary-foreground: 210 40% 98%;
 
-    --secondary: 217 33% 15%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
 
-    --muted: 217 33% 15%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
 
-    --accent: 238 84% 65%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 63% 45%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 238 84% 65%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
 
-    --surface-elevated: 224 50% 10%;
-    --surface-subtle: 224 50% 8%;
-    --surface-inset: 224 50% 6%;
-    --text-primary: 210 40% 98%;
-    --text-secondary: 215 20% 65%;
-    --text-tertiary: 215 16% 47%;
-    --border-subtle: 217 33% 20%;
-    --border-strong: 217 33% 25%;
+    --surface-elevated: 240 10% 5%;
+    --surface-subtle: 240 10% 4%;
+    --surface-inset: 240 10% 3%;
+    --text-primary: 0 0% 98%;
+    --text-secondary: 240 5% 64.9%;
+    --text-tertiary: 240 5% 45%;
+    --border-subtle: 240 3.7% 15.9%;
+    --border-strong: 240 3.7% 20%;
 
-    --sidebar-background: 224 50% 8%;
-    --sidebar-foreground: 215 20% 65%;
-    --sidebar-primary: 238 84% 65%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 238 50% 15%;
-    --sidebar-accent-foreground: 238 84% 75%;
-    --sidebar-border: 217 33% 17%;
-    --sidebar-ring: 238 84% 65%;
-
-    /* Cockpit Theme - Enterprise Premium */
-    --cockpit-bg: 240 6% 5%;
-    --cockpit-elevated: 240 6% 7%;
-    --cockpit-surface: 240 6% 9%;
-    --cockpit-violet: 258 90% 66%;
-    --cockpit-success: 160 84% 39%;
-    --cockpit-muted: 240 5% 46%;
-    --cockpit-border: 240 5% 12%;
+    --sidebar-background: 240 10% 3.9%;
+    --sidebar-foreground: 240 5% 64.9%;
+    --sidebar-primary: 263.4 70% 50.4%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 263.4 70% 50.4%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 263.4 70% 50.4%;
   }
 }
 
@@ -137,7 +129,16 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-zinc-950 text-foreground font-sans antialiased;
+    background-image: radial-gradient(
+      ellipse at top,
+      var(--tw-gradient-stops)
+    );
+    --tw-gradient-from: #27272a; /* zinc-800 */
+    --tw-gradient-to: #09090b; /* zinc-950 */
+    --tw-gradient-stops:
+      var(--tw-gradient-from), #09090b, var(--tw-gradient-to);
+
     font-family:
       "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     -webkit-font-smoothing: antialiased;

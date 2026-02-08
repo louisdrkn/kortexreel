@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import kortexLogo from "@/assets/kortex-logo.png";
+import kortexLogo from "@/assets/kortex-logo-transparent.png";
 
 export function FullScreenAuthLoader({
   label = "Synchronisation de la session…",
@@ -12,7 +12,7 @@ export function FullScreenAuthLoader({
         <img
           src={kortexLogo}
           alt="Kortex"
-          className="h-14 w-14 object-contain animate-pulse-subtle"
+          className="h-14 w-14 object-contain animate-pulse-subtle brightness-110"
           loading="eager"
         />
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

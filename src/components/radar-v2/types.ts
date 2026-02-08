@@ -23,6 +23,8 @@ export interface Company {
   tags?: string[];
   googleMaps?: GoogleMapsData;
   // Deep analysis fields
+  context?: string; // Mapped from match_explanation
+  activity?: string; // Mapped from custom_hook.original_activity
   descriptionLong?: string;
   painPoints?: string[];
   buyingSignals?: string[];
@@ -32,6 +34,7 @@ export interface Company {
   analysisStatus?:
     | "pending"
     | "analyzing"
+    | "analyzed" // Added for Agent V2 direct results
     | "completed"
     | "failed"
     | "archived"

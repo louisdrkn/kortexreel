@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { CommandHeader } from "@/components/layout/CommandHeader";
 import {
   AlertCircle,
   Brain,
@@ -922,49 +923,34 @@ export default function AgencyBrain() {
     <div className="min-h-screen bg-background p-6 lg:p-10">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center bg-emerald-500/10 rounded-lg shadow-2xl">
-              <Brain className="h-6 w-6 text-emerald-500" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">
-                Cerveau Agence
-              </h1>
-              <p className="text-muted-foreground">
-                Nourrissez l'IA avec votre ADN unique
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <AutoSaveIndicator
-              status={agencyDNAStatus}
-              lastSavedAt={lastSavedAt}
-            />
-            {isAutoScanning
-              ? (
-                // Hide button while scanning to show bar below (or we could show a disabled state)
-                // User asked to replace the button. Since we are putting the bar below the header to fit,
-                // we will render a placeholder or nothing here.
-                // Actually, let's keep the button hidden to focus attention on the bar.
-                null
-              )
-              : (
+        <CommandHeader
+          title="Cerveau Agence"
+          subtitle="Nourrissez l'IA avec votre ADN unique"
+          icon={Brain}
+          actions={
+            <div className="flex items-center gap-3">
+              <AutoSaveIndicator
+                status={agencyDNAStatus}
+                lastSavedAt={lastSavedAt}
+              />
+              {!isAutoScanning && (
                 <Button
                   onClick={handleAutoScanAndFill}
                   disabled={isAutoScanning ||
-                    !websiteUrl && uploadedDocs.length === 0 &&
-                      documents.length === 0}
+                    (!websiteUrl &&
+                      uploadedDocs.length === 0 &&
+                      documents.length === 0)}
                   variant="outline"
-                  className="gap-2 border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-400 transition-all duration-300"
+                  className="gap-2 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-400 transition-all duration-300 text-xs font-mono uppercase tracking-wider"
                 >
-                  <Wand2 className="h-4 w-4" />
-                  AUTO-SCAN & FILL
+                  <Wand2 className="h-3 w-3" />
+                  Auto-Scan
                 </Button>
               )}
-            <SaveButton onSave={handleSave} isSaving={isSaving} />
-          </div>
-        </div>
+              <SaveButton onSave={handleSave} isSaving={isSaving} />
+            </div>
+          }
+        />
 
         {/* Progress Bar (Kortex Guedin Bar) - Replaces the button/loader status */}
         {isAutoScanning && (

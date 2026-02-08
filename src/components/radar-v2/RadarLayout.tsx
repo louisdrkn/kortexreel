@@ -1,4 +1,5 @@
 import { ElementType, useEffect, useRef, useState } from "react";
+import { CommandHeader } from "@/components/layout/CommandHeader";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -224,44 +225,27 @@ export function RadarLayout() {
 
   return (
     <RadarContainer>
-      {/* Header - Floating Control Pod */}
-      <header className="sticky top-0 z-30 pt-4 px-4 sm:px-6 lg:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-7xl mx-auto"
-        >
-          {/* Control Pod Container */}
-          <div className="bg-slate-900/80 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-800 p-4">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              {/* Left: Title + Project Badge */}
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 border border-violet-500/20 shadow-[0_0_15px_rgba(139,92,246,0.3)]">
-                    <Radar className="h-5 w-5 text-violet-400" />
-                  </div>
-                  <div>
-                    <h1 className="text-lg font-semibold tracking-tight text-white flex items-center gap-2">
-                      KORTEX RADAR
-                      <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded border border-violet-500/30">
-                        V2.0
-                      </span>
-                    </h1>
-                  </div>
-                </div>
-
-                {projectName && (
-                  <Badge
-                    variant="outline"
-                    className="bg-slate-800/50 border-slate-700 text-slate-300 font-medium text-xs uppercase tracking-wide"
-                  >
-                    {projectName}
-                  </Badge>
-                )}
-              </div>
-
-              {/* Center: Status Pills */}
-              <div className="hidden md:flex items-center gap-2">
+      {/* Header - Command Strip */}
+      <div className="px-4 sm:px-6 lg:px-8 pt-4">
+        <CommandHeader
+          title="KORTEX RADAR"
+          icon={Radar}
+          subtitle={
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] text-zinc-500 font-mono border border-zinc-800 px-1.5 py-0.5 rounded">
+                V2.0
+              </span>
+              {projectName && (
+                <span className="text-[10px] text-zinc-500 font-mono border border-zinc-800 px-1.5 py-0.5 rounded uppercase">
+                  {projectName}
+                </span>
+              )}
+            </div>
+          }
+          actions={
+            <div className="flex items-center gap-3">
+              {/* Status Pills - Tech Version */}
+              <div className="hidden md:flex items-center gap-2 mr-4 border-r border-white/5 pr-4">
                 <StatusPill
                   icon={FileText}
                   label="PDF"
@@ -269,19 +253,18 @@ export function RadarLayout() {
                 />
                 <StatusPill
                   icon={Globe}
-                  label="Site"
+                  label="WEB"
                   active={projectContext.hasSite}
                 />
                 <StatusPill
                   icon={Target}
-                  label="Cible"
+                  label="CIBLE"
                   active={projectContext.hasTarget}
                 />
               </div>
 
-              {/* Right: Filter + Recalibrate + Action */}
-              <div className="flex items-center gap-3">
-                {/* Recalibrate Button */}
+              {/* Actions */}
+              <div className="flex items-center gap-2">
                 <RecalibrateButton
                   onRecalibrate={handleRecalibrate}
                   isRecalibrating={isRecalibrating}
@@ -289,59 +272,52 @@ export function RadarLayout() {
                   disabled={isScanning || companies.length === 0}
                 />
 
-                {/* 🧪 DEBUG: Force Visibility Test */}
                 <Button
-                  variant="destructive"
+                  variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 opacity-50 hover:opacity-100"
+                  className="h-8 w-8 p-0 opacity-20 hover:opacity-100 transition-opacity"
                   onClick={() => (window as any).injectTestCard?.()}
                   title="TEST: Force Card Injection"
                 >
                   🧪
                 </Button>
 
-                {/* 🔄 RESET & REFINE BUTTON */}
                 <Button
                   variant="outline"
                   size="sm"
-                  className="gap-2 bg-red-950/30 border-red-900/50 text-red-400 hover:text-red-300 hover:bg-red-900/50 hover:border-red-500/50 transition-all duration-300"
+                  className="h-8 w-8 p-0 border-zinc-800 bg-transparent text-zinc-500 hover:text-red-400 hover:border-red-900/50"
                   onClick={forceReloadRadar}
-                  title="Supprimer tout et recommencer"
+                  title="Reload UI"
                 >
                   <Trash2 className="h-4 w-4" />
-                  <span className="hidden sm:inline">Reload UI</span>
                 </Button>
 
-                {/* Filter Popover */}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="gap-2 bg-slate-900 border-slate-700 text-slate-400 hover:text-white hover:border-violet-500/50 hover:bg-slate-800"
+                      className="gap-2 h-8 border-zinc-800 bg-transparent text-zinc-500 hover:text-white hover:border-zinc-700 text-xs font-mono uppercase"
                     >
-                      <Filter className="h-4 w-4" />
+                      <Filter className="h-3 w-3" />
                       <span className="hidden sm:inline">Filtres</span>
                       {(minScore > 0 || statusFilter.length > 0) && (
-                        <Badge
-                          variant="secondary"
-                          className="ml-1 px-1.5 py-0 text-xs bg-violet-900/50 text-violet-300 border border-violet-500/20"
-                        >
+                        <span className="ml-1 text-[10px] text-indigo-400">
                           {(minScore > 0 ? 1 : 0) + statusFilter.length}
-                        </Badge>
+                        </span>
                       )}
-                      <ChevronDown className="h-3 w-3" />
+                      <ChevronDown className="h-3 w-3 opacity-50" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent
                     align="end"
-                    className="w-72 bg-slate-900 border-slate-800 text-slate-200 shadow-xl shadow-black/50"
+                    className="w-72 bg-slate-950 border-zinc-800 text-slate-200"
                   >
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label className="text-slate-400 text-xs uppercase tracking-wide">
+                        <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-mono">
                           Score minimum:{" "}
-                          <span className="text-violet-400 font-semibold">
+                          <span className="text-white font-semibold">
                             {minScore}
                           </span>
                         </Label>
@@ -351,23 +327,38 @@ export function RadarLayout() {
                           min={0}
                           max={100}
                           step={10}
-                          className="[&_[role=slider]]:bg-violet-500 [&_[role=slider]]:border-violet-400 [&_[role=track]]:bg-slate-800"
+                          className="[&_[role=slider]]:bg-white [&_[role=slider]]:border-white [&_[role=track]]:bg-zinc-800"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-slate-400 text-xs uppercase tracking-wide">
+                        <Label className="text-zinc-500 text-[10px] uppercase tracking-wider font-mono">
                           Statut
                         </Label>
                         <div className="flex flex-wrap gap-2">
                           {[
-                            { key: "hot", label: "🔥 Hot", color: "emerald" },
-                            { key: "warm", label: "☀️ Warm", color: "amber" },
-                            { key: "cold", label: "❄️ Cold", color: "blue" },
+                            {
+                              key: "hot",
+                              label: "HOT",
+                              color: "emerald",
+                              icon: "Zap",
+                            },
+                            {
+                              key: "warm",
+                              label: "WARM",
+                              color: "amber",
+                              icon: "Sun",
+                            },
+                            {
+                              key: "cold",
+                              label: "COLD",
+                              color: "blue",
+                              icon: "Snowflake",
+                            },
                           ].map((status) => (
                             <Button
                               key={status.key}
                               variant={statusFilter.includes(status.key)
-                                ? "default"
+                                ? "secondary"
                                 : "outline"}
                               size="sm"
                               onClick={() => {
@@ -378,9 +369,9 @@ export function RadarLayout() {
                                 );
                               }}
                               className={cn(
-                                "text-xs border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300",
+                                "text-[10px] h-6 px-2 font-mono uppercase tracking-wide border-zinc-800 bg-transparent text-zinc-500 hover:text-white",
                                 statusFilter.includes(status.key) &&
-                                  "bg-violet-600 text-white hover:bg-violet-700 border-violet-500",
+                                  "bg-zinc-800 text-white border-zinc-700",
                               )}
                             >
                               {status.label}
@@ -392,13 +383,13 @@ export function RadarLayout() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="w-full text-slate-500 hover:text-slate-300"
+                          className="w-full text-zinc-500 hover:text-white text-xs"
                           onClick={() => {
                             setMinScore(0);
                             setStatusFilter([]);
                           }}
                         >
-                          Réinitialiser
+                          Reset
                         </Button>
                       )}
                     </div>
@@ -406,9 +397,9 @@ export function RadarLayout() {
                 </Popover>
               </div>
             </div>
-          </div>
-        </motion.div>
-      </header>
+          }
+        />
+      </div>
 
       {/* CORE RADAR SECTION - DYNAMIC RESIZING */}
       <AnimatePresence mode="wait">
@@ -560,15 +551,15 @@ function StatusPill({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border",
+        "flex items-center gap-2 px-2 py-1 rounded text-[10px] font-medium font-mono uppercase tracking-wide transition-all duration-200 border",
         active
-          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.2)]"
-          : "bg-slate-800 text-slate-500 border-slate-700",
+          ? "bg-transparent text-emerald-400 border-emerald-500/30"
+          : "bg-transparent text-zinc-700 border-transparent opacity-50",
       )}
     >
       {active
-        ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-        : <Icon className="h-3.5 w-3.5" />}
+        ? <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+        : <Icon className="h-3 w-3" />}
       <span>{label}</span>
     </div>
   );

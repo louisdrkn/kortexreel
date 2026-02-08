@@ -42,11 +42,11 @@ interface CompanyCardProps {
 function getScoreColor(score: number) {
   // SCORE IS DEAD: Always return "Hot/Verified" style
   return {
-    border: "border-emerald-500/50",
+    border: "border-emerald-500/20",
     text: "text-emerald-400",
     bg: "bg-emerald-500/10",
     ring: "ring-emerald-500/20",
-    shadow: "shadow-[0_0_15px_rgba(16,185,129,0.3)]",
+    shadow: "shadow-[0_0_15px_-3px_rgba(16,185,129,0.2)]",
   };
 }
 
@@ -255,18 +255,18 @@ export function CompanyCard(
         "relative w-full text-left",
         "cursor-pointer",
         "rounded-xl",
-        "bg-slate-900/40 backdrop-blur-sm",
-        "border border-slate-800",
-        "shadow-md shadow-black/20",
+        "bg-zinc-900/40 backdrop-blur-md", // Glassmorphism
+        "border border-white/5", // Subtle border
+        "shadow-lg shadow-black/40",
         "transition-all duration-300 ease-out",
-        // Premium hover shadow with violet/indigo glow
-        "hover:shadow-[0_0_30px_-5px_rgba(124,58,237,0.3)]",
-        "hover:border-violet-500/40 hover:bg-slate-900/60",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/40",
+        // Premium hover shadow with neon glow - Indigo/Violet
+        "hover:shadow-[0_0_20px_-5px_rgba(99,102,241,0.3)]",
+        "hover:border-indigo-500/50 hover:bg-zinc-900/60",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40",
         "group overflow-hidden",
-        // Persisted decision maker: subtle violet accent
+        // Persisted decision maker: subtle violet accent override
         hasPersistedDecisionMaker &&
-          "ring-1 ring-violet-500/30 border-violet-500/30",
+          "ring-1 ring-indigo-500/30 border-indigo-500/30",
       )}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -318,7 +318,7 @@ export function CompanyCard(
       </div>
 
       {/* Header */}
-      <div className="bg-slate-950/30 border-b border-slate-800 p-4">
+      <div className="bg-zinc-950/30 border-b border-white/5 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {/* Logo with Clearbit + elegant fallback */}
@@ -361,16 +361,16 @@ export function CompanyCard(
                     onClick={(e) => e.stopPropagation()}
                     className="block group/link"
                   >
-                    <h3 className="font-semibold text-slate-100 text-base leading-snug group-hover/link:text-violet-300 transition-colors flex items-center gap-1.5 min-w-0">
+                    <h3 className="font-semibold text-zinc-100 text-base leading-snug group-hover/link:text-indigo-300 transition-colors flex items-center gap-1.5 min-w-0">
                       <span className="break-words line-clamp-2 md:line-clamp-none">
                         {displayName}
                       </span>
-                      <ExternalLink className="h-3.5 w-3.5 opacity-0 group-hover/link:opacity-100 transition-opacity text-slate-400 flex-shrink-0" />
+                      <ExternalLink className="h-3.5 w-3.5 opacity-0 group-hover/link:opacity-100 transition-opacity text-zinc-500 flex-shrink-0" />
                     </h3>
                   </a>
                 )
                 : (
-                  <h3 className="font-semibold text-slate-100 text-base leading-snug group-hover:text-violet-300 transition-colors break-words line-clamp-2 md:line-clamp-none">
+                  <h3 className="font-semibold text-zinc-100 text-base leading-snug group-hover:text-indigo-300 transition-colors break-words line-clamp-2 md:line-clamp-none">
                     {displayName}
                   </h3>
                 )}
@@ -400,9 +400,9 @@ export function CompanyCard(
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="flex items-center gap-1 text-xs text-slate-500 hover:text-violet-300 transition-colors group/map"
+                          className="flex items-center gap-1 text-xs text-zinc-500 hover:text-indigo-300 transition-colors group/map font-mono"
                         >
-                          <MapPin className="h-3 w-3 text-slate-600 group-hover/map:text-violet-400" />
+                          <MapPin className="h-3 w-3 text-zinc-600 group-hover/map:text-indigo-400" />
                           <span className="truncate max-w-[150px]">
                             {company.googleMaps.formattedAddress.split(",")[1]
                               ?.trim() || "Voir sur la carte"}
@@ -445,27 +445,27 @@ export function CompanyCard(
                 <Badge
                   variant="outline"
                   className={cn(
-                    "px-3 py-1.5 text-xs font-bold uppercase tracking-wide border transition-all",
+                    "px-3 py-1.5 text-xs font-bold uppercase tracking-wide border transition-all font-mono",
                     company.strategicCategory === "PERFECT_MATCH" &&
-                      "bg-emerald-500/10 border-emerald-500/40 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]",
+                      "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.1)]",
                     company.strategicCategory === "OPPORTUNITY" &&
-                      "bg-blue-500/10 border-blue-500/40 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.2)]",
+                      "bg-blue-500/10 border-blue-500/20 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.1)]",
                     company.strategicCategory === "OUT_OF_SCOPE" &&
-                      "bg-slate-800/50 border-slate-700 text-slate-500",
+                      "bg-zinc-800/50 border-zinc-700 text-zinc-500",
                   )}
                 >
                   {company.strategicCategory === "PERFECT_MATCH" &&
-                    "🎯 Cœur de Cible"}
+                    "Cœur de Cible"}
                   {company.strategicCategory === "OPPORTUNITY" &&
-                    "💡 Opportunité"}
+                    "Opportunité"}
                   {company.strategicCategory === "OUT_OF_SCOPE" &&
-                    "🚫 Hors Cible"}
+                    "Hors Cible"}
                 </Badge>
               )
               : (
                 <div
                   className={cn(
-                    "px-3 py-2 rounded-lg font-bold text-lg backdrop-blur-md",
+                    "px-3 py-2 rounded-lg font-bold text-lg backdrop-blur-md font-mono",
                     colors.bg,
                     colors.text,
                     colors.shadow,
@@ -537,7 +537,7 @@ export function CompanyCard(
                 {company.analysisStatus === "deduced" && (
                   <Badge
                     variant="outline"
-                    className="text-xs bg-indigo-500/10 border-indigo-500/30 text-indigo-300 gap-1 animate-pulse"
+                    className="text-xs bg-indigo-500/10 border-indigo-500/20 text-indigo-300 gap-1 animate-pulse font-mono"
                   >
                     <Sparkles className="h-3 w-3" />
                     IA Stratège
@@ -548,15 +548,15 @@ export function CompanyCard(
                     <TooltipTrigger asChild>
                       <Badge
                         variant="outline"
-                        className="text-xs bg-emerald-500/10 border-emerald-500/30 text-emerald-400 gap-1"
+                        className="text-xs bg-emerald-500/10 border-emerald-500/20 text-emerald-400 gap-1 font-mono"
                       >
                         <Target className="h-3 w-3" />
-                        Cible ✓
+                        Cible
                       </Badge>
                     </TooltipTrigger>
                     <TooltipContent
                       side="top"
-                      className="max-w-xs bg-slate-900 border-slate-800 text-slate-200"
+                      className="max-w-xs bg-zinc-900 border-zinc-800 text-zinc-200"
                     >
                       <p className="text-xs">Validé par Définition Cible</p>
                     </TooltipContent>
@@ -567,15 +567,15 @@ export function CompanyCard(
                     <TooltipTrigger asChild>
                       <Badge
                         variant="outline"
-                        className="text-xs bg-violet-500/10 border-violet-500/30 text-violet-400 gap-1"
+                        className="text-xs bg-violet-500/10 border-violet-500/20 text-violet-400 gap-1 font-mono"
                       >
                         <Brain className="h-3 w-3" />
-                        Cerveau ✓
+                        Cerveau
                       </Badge>
                     </TooltipTrigger>
                     <TooltipContent
                       side="top"
-                      className="max-w-xs bg-slate-900 border-slate-800 text-slate-200"
+                      className="max-w-xs bg-zinc-900 border-zinc-800 text-zinc-200"
                     >
                       <p className="text-xs">Validé par Cerveau Agence</p>
                     </TooltipContent>
@@ -600,7 +600,7 @@ export function CompanyCard(
         {company.industry && (
           <Badge
             variant="outline"
-            className="text-xs bg-slate-800/50 border-slate-700 text-slate-400"
+            className="text-xs bg-zinc-800/50 border-white/5 text-zinc-400 font-mono"
           >
             {company.industry}
           </Badge>
@@ -618,7 +618,7 @@ export function CompanyCard(
                   onClick={(e) => e.stopPropagation()}
                   className="block group/reason"
                 >
-                  <p className="text-xs text-slate-300 leading-relaxed bg-gradient-to-r from-violet-500/10 to-transparent p-2 rounded-lg border-l-2 border-violet-500/30 group-hover/reason:bg-violet-500/20 transition-colors">
+                  <p className="text-xs text-zinc-300 leading-relaxed bg-gradient-to-r from-violet-500/10 to-transparent p-2 rounded-lg border-l-2 border-violet-500/30 group-hover/reason:bg-violet-500/20 transition-colors">
                     <Sparkles className="inline h-3 w-3 text-violet-400 mr-1" />
                     <span className="group-hover/reason:text-violet-200 transition-colors">
                       {company.matchReason.slice(0, 150)}

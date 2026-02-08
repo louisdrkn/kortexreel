@@ -267,7 +267,7 @@ export default function Projects() {
                           size="md"
                         />
                         <div>
-                          <CardTitle className="text-lg text-slate-900">
+                          <CardTitle className="text-lg text-zinc-100 font-semibold">
                             {project.name}
                           </CardTitle>
                         </div>

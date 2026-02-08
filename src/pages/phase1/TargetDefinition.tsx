@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CommandHeader } from "@/components/layout/CommandHeader";
 import {
   Building2,
   Loader2,
@@ -241,47 +242,40 @@ export default function TargetDefinition() {
     <div className="min-h-screen bg-background p-6 lg:p-10">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10">
-              <Target className="h-6 w-6 text-emerald-500" />
+        <CommandHeader
+          title="Définition de la Cible"
+          subtitle="Critères LinkedIn Sales Navigator"
+          icon={Target}
+          actions={
+            <div className="flex items-center gap-3">
+              <AutoSaveIndicator
+                status={targetCriteriaStatus}
+                lastSavedAt={lastSavedAt}
+              />
+              <Button
+                onClick={handleAISuggest}
+                disabled={isGenerating}
+                variant="outline"
+                className="text-xs font-mono uppercase tracking-wider"
+              >
+                {isGenerating
+                  ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                      Analyse...
+                    </>
+                  )
+                  : (
+                    <>
+                      <Sparkles className="h-3 w-3 mr-2" />
+                      Suggérer
+                    </>
+                  )}
+              </Button>
+              <SaveButton onSave={handleSave} isSaving={isSaving} />
             </div>
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">
-                Définition de la Cible
-              </h1>
-              <p className="text-muted-foreground">
-                Critères LinkedIn Sales Navigator
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <AutoSaveIndicator
-              status={targetCriteriaStatus}
-              lastSavedAt={lastSavedAt}
-            />
-            <Button
-              onClick={handleAISuggest}
-              disabled={isGenerating}
-              variant="outline"
-            >
-              {isGenerating
-                ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Analyse...
-                  </>
-                )
-                : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Suggérer avec l'IA
-                  </>
-                )}
-            </Button>
-            <SaveButton onSave={handleSave} isSaving={isSaving} />
-          </div>
-        </div>
+          }
+        />
 
         {/* Firmographic Filters */}
         <Card className="border-border shadow-soft">

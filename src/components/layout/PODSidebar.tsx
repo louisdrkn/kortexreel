@@ -28,8 +28,8 @@ import { useRadar } from "@/components/radar-v2/hooks/useRadar";
 const navSections = [{
   title: "Stratégie & ADN",
   phase: 1,
-  color: "text-emerald-500",
-  bgColor: "bg-emerald-500/10",
+  color: "text-zinc-500",
+  bgColor: "bg-zinc-500/10",
   items: [{
     title: "Cerveau Agence",
     url: "/strategie/cerveau",
@@ -42,8 +42,8 @@ const navSections = [{
 }, {
   title: "Radar & Conquête",
   phase: 2,
-  color: "text-amber-500",
-  bgColor: "bg-amber-500/10",
+  color: "text-zinc-500",
+  bgColor: "bg-zinc-500/10",
   items: [{
     title: "Radar Marché",
     url: "/radar/scan",
@@ -64,8 +64,8 @@ const navSections = [{
 }, {
   title: "Closing",
   phase: 3,
-  color: "text-rose-500",
-  bgColor: "bg-rose-500/10",
+  color: "text-zinc-500",
+  bgColor: "bg-zinc-500/10",
   items: [{
     title: "Générateur Propale",
     url: "/closing/propale",
@@ -110,17 +110,17 @@ export function PODSidebar() {
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300 ease-out",
+        "flex flex-col border-r border-white/5 bg-zinc-950/30 backdrop-blur-xl text-zinc-400 transition-all duration-300 ease-out",
         collapsed ? "w-[72px]" : "w-[260px]",
       )}
     >
       {/* Logo & Project */}
-      <div className="flex flex-col border-b border-sidebar-border">
+      <div className="flex flex-col border-b border-white/5 bg-transparent">
         {/* Premium Brand Block */}
         <div
           className={cn(
-            "flex justify-center items-center bg-slate-950",
-            collapsed ? "py-4 px-2" : "py-6 px-4",
+            "flex items-center justify-center", // Center alignment
+            collapsed ? "pt-8 px-2" : "pl-6 pt-8 pb-8",
           )}
         >
           {collapsed
@@ -128,14 +128,14 @@ export function PODSidebar() {
               <img
                 src={kortexBrain}
                 alt="KORTEX"
-                className="h-8 w-8 object-contain"
+                className="h-8 w-8 object-contain mix-blend-screen filter brightness-125 drop-shadow-[0_0_10px_rgba(139,92,246,0.5)]"
               />
             )
             : (
               <img
-                src={kortexText}
+                src="/kortex-logo-transparent.png"
                 alt="KORTEX"
-                className="w-11/12 h-auto object-contain border-2 border-primary"
+                className="w-[85%] max-w-[90%] object-contain filter brightness-110"
               />
             )}
         </div>
@@ -145,14 +145,14 @@ export function PODSidebar() {
           <NavLink
             to="/dashboard"
             className={cn(
-              "group relative flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-semibold text-sidebar-foreground transition-all duration-150",
-              "bg-gradient-to-r from-primary/10 to-transparent hover:from-primary/20",
-              "border border-primary/20 hover:border-primary/40",
+              "group relative flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium text-zinc-400 transition-all duration-150",
+              "hover:bg-zinc-900/50 hover:text-zinc-100",
+              "border border-white/5 hover:border-white/10",
               collapsed && "justify-center px-2",
             )}
-            activeClassName="from-primary/20 border-primary/50 text-primary"
+            activeClassName="bg-zinc-800/50 text-white border-indigo-500/30"
           >
-            <LayoutDashboard className="h-4 w-4 shrink-0 text-primary" />
+            <LayoutDashboard className="h-4 w-4 shrink-0 text-zinc-500 stroke-[1.5px] group-hover:text-zinc-300 transition-colors" />
             {!collapsed && <span>Cockpit</span>}
           </NavLink>
         </div>
@@ -163,7 +163,7 @@ export function PODSidebar() {
               variant="ghost"
               onClick={handleBackToProjects}
               className={cn(
-                "w-full justify-start gap-2 text-xs bg-sidebar-accent/50 hover:bg-sidebar-accent text-sidebar-accent-foreground rounded-lg h-auto py-2.5",
+                "w-full justify-start gap-2 text-xs bg-zinc-900/30 hover:bg-zinc-800/50 text-zinc-400 hover:text-white rounded-lg h-auto py-2.5 border border-white/5",
                 collapsed && "justify-center px-2",
               )}
             >
@@ -200,7 +200,7 @@ export function PODSidebar() {
                     {section.phase}
                   </span>
                 )}
-                <span className="text-[9px] uppercase tracking-widest font-semibold text-sidebar-foreground/60">
+                <span className="text-[9px] uppercase tracking-widest font-semibold text-zinc-600">
                   {section.title}
                 </span>
               </div>
@@ -224,20 +224,23 @@ export function PODSidebar() {
                     to={item.url}
                     data-tour={tourAttribute}
                     className={cn(
-                      "group relative flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium text-sidebar-foreground transition-all duration-150",
-                      "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      "group relative flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium text-zinc-400 transition-all duration-150",
+                      "hover:bg-zinc-900/50 hover:text-zinc-200",
                       collapsed && "justify-center px-2",
                     )}
-                    activeClassName="bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-[3px] before:rounded-r-full before:bg-primary"
+                    activeClassName="bg-zinc-800/50 text-white before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-[3px] before:rounded-r-full before:bg-indigo-500"
                   >
                     {item.icon && (
                       <item.icon
                         className={cn(
-                          "h-4 w-4 shrink-0 transition-colors",
-                          "group-hover:text-sidebar-accent-foreground",
+                          "h-4 w-4 shrink-0 transition-colors stroke-[1.5px]",
+                          "text-zinc-500 group-hover:text-zinc-300",
+                          // ACTIVE STATE HIGHLIGHT
+                          item.url === window.location.pathname &&
+                            "text-indigo-400",
                           item.url === "/radar/scan" &&
                             (isScanning || isExecuting) &&
-                            "animate-spin text-violet-500",
+                            "animate-spin text-indigo-500",
                         )}
                       />
                     )}

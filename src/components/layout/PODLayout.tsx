@@ -9,7 +9,7 @@ interface PODLayoutProps {
 
 export function PODLayout({ children }: PODLayoutProps) {
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div className="flex min-h-screen w-full">
       <PODSidebar />
       <main className="flex-1 overflow-auto">
         {children}

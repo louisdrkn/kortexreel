@@ -742,21 +742,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
             const enhancedPrompt = `${missionBrief}
             ${pastClientsContext}
             
-            IMPORTANT OUTPUT INSTRUCTIONS:
-            You must return your findings as a strict LIST. 
-            For each company found, strictly follow this format:
-            - Company Name: [Name]
-            - URL: [URL]
-            - Activity: [Brief description of what they do]
-            - Context/Reason: [Why they match the mission AND the Reference Models]
-            
-            Do not summarize. List every single match found.
+            [ROLE]
+            Tu es un expert en développement commercial B2B pour le marché français.
+            [TASK] Trouve et analyse 20 entreprises pertinentes correspondant aux critères.
+
+            [LANGUAGE CONSTRAINTS - CRITICAL]
+
+            ALL CONTENT MUST BE IN FRENCH: Les champs 'activity', 'context', 'usage_examples' doivent être rédigés en français impeccable.
+
+            JSON KEYS MUST REMAIN IN ENGLISH: Ne traduis PAS les clés du JSON (ex: garde 'company_name', 'url', 'context'). Seules les valeurs (le texte) doivent être en français.
+
+            [OUTPUT] Retourne un JSON valide avec la liste sous la clé 'companies'.
             
             CRITICAL OVERRIDE: IGNORE any quantity requested in the main query.
-            1. STRICT LIMIT: STOP searching as soon as you have 5 candidates.
-            2. QUOTA: Your absolute CAP is 5. Do not find 35. Find 5.
-            3. SPEED: Return immediately after 5 matches.
-            4. BEST EFFORT: If you have 3, return them.`;
+            1. STRICT LIMIT: STOP searching as soon as you have 20 candidates.
+            2. QUOTA: Your absolute CAP is 20. Do not find 35. Find 20.
+            3. SPEED: Return immediately after 20 matches.
+            4. BEST EFFORT: If you have less, return them.`;
 
             await logToDB(
               `MISSION_START`,

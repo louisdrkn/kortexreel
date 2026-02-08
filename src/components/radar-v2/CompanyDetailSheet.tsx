@@ -88,8 +88,8 @@ function DataSection({
       <CollapsibleTrigger
         className={cn(
           "flex items-center justify-between w-full p-3 rounded-xl",
-          "bg-slate-50 border border-slate-100",
-          "hover:bg-slate-100 transition-colors",
+          "bg-zinc-900/50 border border-white/5",
+          "hover:bg-zinc-800/50 transition-colors",
           "group",
         )}
       >
@@ -97,7 +97,7 @@ function DataSection({
           <div className={cn("p-1.5 rounded-lg", colorClasses[color])}>
             <Icon className="h-4 w-4" />
           </div>
-          <span className="font-medium text-slate-700 text-sm">
+          <span className="font-medium text-zinc-300 text-sm">
             {title}
           </span>
         </div>
@@ -154,8 +154,7 @@ export function CompanyDetailSheet({
 
   const logoUrl = company.logoUrl ||
     (company.domain ? `https://logo.clearbit.com/${company.domain}` : null);
-  const hasAnalysis = company.analysisStatus === "completed" &&
-    company.descriptionLong;
+
   const hasDecisionMaker = !!company.decisionMaker;
   const score = company.score || 0;
 
@@ -170,8 +169,8 @@ export function CompanyDetailSheet({
       <SheetContent
         className={cn(
           "w-full sm:max-w-lg p-0 flex flex-col h-full",
-          "bg-white/95 backdrop-blur-md border-l border-slate-200",
-          "shadow-[-20px_0_60px_rgba(0,0,0,0.05)]",
+          "bg-zinc-950/95 backdrop-blur-md border-l border-white/10",
+          "shadow-[-20px_0_60px_rgba(0,0,0,0.5)]",
           // Floating effect - slight margin from edge
           "sm:mr-3 sm:my-3 sm:rounded-2xl sm:h-[calc(100%-24px)]",
         )}
@@ -179,14 +178,14 @@ export function CompanyDetailSheet({
         {/* Header with blurred background image effect */}
         <div className="relative overflow-hidden rounded-t-2xl">
           {/* Gradient background */}
-          <div className="h-28 bg-gradient-to-br from-violet-100 via-slate-50 to-fuchsia-50" />
+          <div className="h-28 bg-gradient-to-br from-indigo-900/50 via-zinc-900 to-purple-900/50" />
 
           {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-white via-white/80 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent" />
 
           {/* Logo overlay - Adjusted for better visibility */}
           <div className="absolute -bottom-6 left-6 z-10">
-            <div className="w-16 h-16 rounded-2xl bg-white border-2 border-slate-100 shadow-xl flex items-center justify-center overflow-hidden">
+            <div className="w-16 h-16 rounded-2xl bg-zinc-900 border-2 border-zinc-800 shadow-xl flex items-center justify-center overflow-hidden">
               {logoUrl
                 ? (
                   <img
@@ -222,7 +221,7 @@ export function CompanyDetailSheet({
         </div>
 
         <SheetHeader className="px-6 pt-10 pb-4">
-          <SheetTitle className="text-xl font-semibold text-slate-900 mt-2">
+          <SheetTitle className="text-xl font-semibold text-zinc-100 mt-2">
             {company.name}
           </SheetTitle>
           <SheetDescription className="flex items-center gap-2 flex-wrap">
@@ -256,7 +255,7 @@ export function CompanyDetailSheet({
             {company.location && (
               <Badge
                 variant="outline"
-                className="bg-slate-50 border-slate-200 text-slate-500 text-xs"
+                className="bg-zinc-800/50 border-zinc-700 text-zinc-400 text-xs"
               >
                 <MapPin className="h-3 w-3 mr-1" />
                 {company.location}
@@ -276,260 +275,258 @@ export function CompanyDetailSheet({
 
         <ScrollArea className="flex-1 px-6 py-4">
           <div className="space-y-4">
-            {isAnalyzing ? <AnalysisSkeleton /> : hasAnalysis
-              ? (
-                <>
-                  {/* ZERO-DÉCHET: Origine du Match Section */}
-                  {(company.validatedByCible || company.validatedByCerveau ||
-                    company.matchReason) && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-4 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200"
-                    >
-                      <div className="flex items-center gap-2 mb-3">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                        <span className="text-sm font-medium text-emerald-700">
-                          Origine du Match
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {company.validatedByCible && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <Target className="h-4 w-4 text-emerald-500" />
-                            <span className="text-slate-600">
-                              ✅ Validé par{" "}
-                              <span className="font-medium text-emerald-700">
-                                "Définition Cible"
-                              </span>{" "}
-                              (Secteur, taille, géographie OK)
-                            </span>
-                          </div>
-                        )}
-                        {company.validatedByCerveau && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <Brain className="h-4 w-4 text-violet-500" />
-                            <span className="text-slate-600">
-                              ✅ Validé par{" "}
-                              <span className="font-medium text-violet-700">
-                                "Cerveau Agence"
-                              </span>{" "}
-                              (Correspond aux documents)
-                            </span>
-                          </div>
-                        )}
-                        {company.matchReason && (
-                          <p className="text-sm text-slate-600 mt-2 pt-2 border-t border-emerald-100 italic">
-                            → {company.matchReason}
-                          </p>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {/* Analysis Section */}
-                  <DataSection
-                    title="Analyse Stratégique"
-                    icon={Brain}
-                    defaultOpen={true}
-                  >
-                    <p className="text-sm text-slate-600 leading-relaxed">
-                      {company.descriptionLong}
-                    </p>
-                  </DataSection>
-
-                  {/* Custom Hook */}
-                  {company.customHook && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-4 rounded-xl bg-gradient-to-br from-violet-50 to-fuchsia-50 border border-violet-100"
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <Sparkles className="h-4 w-4 text-violet-600" />
-                        <span className="text-sm font-medium text-violet-700">
-                          Accroche personnalisée
-                        </span>
-                      </div>
-                      <p className="text-sm text-slate-700 italic">
-                        "{company.customHook}"
-                      </p>
-                    </motion.div>
-                  )}
-
-                  {/* Strategic Fit */}
-                  {company.strategicAnalysis && (
-                    <DataSection
-                      title="Pourquoi eux ?"
-                      icon={Target}
-                      defaultOpen={true}
-                    >
-                      <p className="text-sm text-slate-600 leading-relaxed">
-                        {company.strategicAnalysis}
-                      </p>
-                    </DataSection>
-                  )}
-
-                  {/* Pain Points */}
-                  {company.painPoints && company.painPoints.length > 0 && (
-                    <DataSection
-                      title="Points de Douleur"
-                      icon={AlertTriangle}
-                      defaultOpen={true}
-                      color="amber"
-                    >
-                      <ul className="space-y-2">
-                        {company.painPoints.map((pain, idx) => (
-                          <motion.li
-                            key={idx}
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: idx * 0.1 }}
-                            className="flex items-start gap-2 text-sm text-slate-600 bg-white p-3 rounded-lg border border-slate-100 shadow-sm"
-                          >
-                            <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                            {pain}
-                          </motion.li>
-                        ))}
-                      </ul>
-                    </DataSection>
-                  )}
-
-                  {/* Buying Signals */}
-                  {company.buyingSignals && company.buyingSignals.length > 0 &&
-                    (
-                      <DataSection
-                        title="Signaux d'Achat"
-                        icon={TrendingUp}
-                        defaultOpen={false}
-                        color="emerald"
-                      >
-                        <div className="flex flex-wrap gap-2">
-                          {company.buyingSignals.map((signal, idx) => (
-                            <Badge
-                              key={idx}
-                              variant="outline"
-                              className="bg-emerald-50 border-emerald-200 text-emerald-700 text-xs"
-                            >
-                              <TrendingUp className="h-3 w-3 mr-1" />
-                              {signal}
-                            </Badge>
-                          ))}
-                        </div>
-                      </DataSection>
-                    )}
-
-                  {/* Decision Makers Section - PRECISION ENGINE V3 */}
-                  <DataSection
-                    title="Décideurs Identifiés"
-                    icon={User}
-                    defaultOpen={true}
-                  >
-                    {hasDecisionMaker
-                      ? (
-                        <div className="space-y-4">
-                          {/* PERSISTED INDICATOR - H24 */}
-                          {company.decisionMaker?.linkedinUrl && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.95 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              className="flex items-center gap-2 p-2 rounded-lg bg-violet-50 border border-violet-100"
-                            >
-                              <div className="p-1 rounded bg-violet-100">
-                                <Database className="h-3.5 w-3.5 text-violet-600" />
-                              </div>
-                              <span className="text-xs text-violet-700 font-medium">
-                                Données persistées • Sauvegardé H24
-                              </span>
-                              <CheckCircle2 className="h-3.5 w-3.5 text-violet-500 ml-auto" />
-                            </motion.div>
-                          )}
-
-                          {/* 👑 CONTACT PRINCIPAL (Le Décideur) */}
-                          <PrimaryContactCard
-                            decisionMaker={company.decisionMaker!}
-                            companyName={company.name}
-                            targetingAnalysis={company.targetingAnalysis}
-                          />
-
-                          {/* 🛡️ ALTERNATIVE SUGGÉRÉE (Le Relais) */}
-                          {company.alternativeContact && (
-                            <AlternativeContactCard
-                              decisionMaker={company.alternativeContact}
-                              companyName={company.name}
-                            />
-                          )}
-                        </div>
-                      )
-                      : (
-                        <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="w-12 h-12 rounded-full bg-white border border-slate-200 flex items-center justify-center mx-auto mb-3 shadow-sm">
-                            <User className="h-6 w-6 text-slate-300" />
-                          </div>
-                          <p className="text-slate-500 text-sm mb-4">
-                            Aucun contact identifié
-                          </p>
-                          <Button
-                            onClick={() => onFindDecisionMaker(company)}
-                            disabled={isFindingDecisionMaker}
-                            className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
-                          >
-                            {isFindingDecisionMaker
-                              ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                  Analyse en cours...
-                                </>
-                              )
-                              : (
-                                <>
-                                  <UserSearch className="h-4 w-4" />
-                                  Identifier les Décideurs
-                                </>
-                              )}
-                          </Button>
-                        </div>
-                      )}
-                  </DataSection>
-
-                  {/* Refresh Analysis Button */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onAnalyze(company)}
-                    disabled={isAnalyzing}
-                    className="w-full bg-white border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                  >
-                    <RefreshCw
-                      className={cn(
-                        "h-3 w-3 mr-2",
-                        isAnalyzing && "animate-spin",
-                      )}
-                    />
-                    Re-analyser
-                  </Button>
-                </>
-              )
-              : (
-                <div className="text-center py-12 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="w-14 h-14 rounded-full bg-white border border-slate-200 flex items-center justify-center mx-auto mb-4 shadow-sm">
-                    <Brain className="h-7 w-7 text-slate-300" />
+            {isAnalyzing && (!company.descriptionLong && !company.context) && (
+              <AnalysisSkeleton />
+            )}
+            <>
+              {/* ZERO-DÉCHET: Origine du Match Section */}
+              {(company.validatedByCible || company.validatedByCerveau ||
+                company.matchReason) && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    <span className="text-sm font-medium text-emerald-400">
+                      Origine du Match
+                    </span>
                   </div>
-                  <p className="text-slate-500 mb-4">
-                    Aucune analyse disponible
-                  </p>
-                  <Button
-                    onClick={() => onAnalyze(company)}
-                    disabled={isAnalyzing}
-                    className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
-                  >
-                    {isAnalyzing
-                      ? <Loader2 className="h-4 w-4 animate-spin" />
-                      : <Sparkles className="h-4 w-4" />}
-                    Lancer l'analyse IA
-                  </Button>
-                </div>
+                  <div className="space-y-2">
+                    {company.validatedByCible && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Target className="h-4 w-4 text-emerald-500" />
+                        <span className="text-zinc-400">
+                          Validé par{" "}
+                          <span className="font-medium text-emerald-400">
+                            "Définition Cible"
+                          </span>{" "}
+                          (Secteur, taille, géographie OK)
+                        </span>
+                      </div>
+                    )}
+                    {company.validatedByCerveau && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Brain className="h-4 w-4 text-violet-500" />
+                        <span className="text-zinc-400">
+                          Validé par{" "}
+                          <span className="font-medium text-violet-400">
+                            "Cerveau Agence"
+                          </span>{" "}
+                          (Correspond aux documents)
+                        </span>
+                      </div>
+                    )}
+                    {company.matchReason && (
+                      <p className="text-sm text-slate-600 mt-2 pt-2 border-t border-emerald-100 italic">
+                        → {company.matchReason}
+                      </p>
+                    )}
+                  </div>
+                </motion.div>
               )}
+
+              {/* Analysis Section */}
+              {(company.descriptionLong || company.context) && (
+                <DataSection
+                  title="Analyse Stratégique"
+                  icon={Brain}
+                  defaultOpen={true}
+                >
+                  <p className="text-sm text-zinc-400 leading-relaxed">
+                    {company.descriptionLong || company.context}
+                  </p>
+                </DataSection>
+              )}
+
+              {/* Activity Section - NEW */}
+              {company.activity && (
+                <DataSection
+                  title="Activité Détectée"
+                  icon={Building2}
+                  defaultOpen={true}
+                >
+                  <p className="text-sm text-zinc-400 leading-relaxed">
+                    {company.activity}
+                  </p>
+                </DataSection>
+              )}
+
+              {/* Custom Hook */}
+              {company.customHook && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-xl bg-gradient-to-br from-violet-500/10 to-fuchsia-500/10 border border-violet-500/20"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="h-4 w-4 text-violet-400" />
+                    <span className="text-sm font-medium text-violet-300">
+                      Accroche personnalisée
+                    </span>
+                  </div>
+                  <p className="text-sm text-zinc-300 italic">
+                    "{company.customHook}"
+                  </p>
+                </motion.div>
+              )}
+
+              {/* Strategic Fit */}
+              {company.strategicAnalysis && (
+                <DataSection
+                  title="Pourquoi eux ?"
+                  icon={Target}
+                  defaultOpen={true}
+                >
+                  <p className="text-sm text-zinc-400 leading-relaxed">
+                    {company.strategicAnalysis}
+                  </p>
+                </DataSection>
+              )}
+
+              {/* Pain Points */}
+              {company.painPoints && company.painPoints.length > 0 && (
+                <DataSection
+                  title="Points de Douleur"
+                  icon={AlertTriangle}
+                  defaultOpen={true}
+                  color="amber"
+                >
+                  <ul className="space-y-2">
+                    {company.painPoints.map((pain, idx) => (
+                      <motion.li
+                        key={idx}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className="flex items-start gap-2 text-sm text-zinc-400 bg-zinc-900/50 p-3 rounded-lg border border-white/5 shadow-sm"
+                      >
+                        <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                        {pain}
+                      </motion.li>
+                    ))}
+                  </ul>
+                </DataSection>
+              )}
+
+              {/* Buying Signals */}
+              {company.buyingSignals && company.buyingSignals.length > 0 &&
+                (
+                  <DataSection
+                    title="Signaux d'Achat"
+                    icon={TrendingUp}
+                    defaultOpen={false}
+                    color="emerald"
+                  >
+                    <div className="flex flex-wrap gap-2">
+                      {company.buyingSignals.map((signal, idx) => (
+                        <Badge
+                          key={idx}
+                          variant="outline"
+                          className="bg-emerald-50 border-emerald-200 text-emerald-700 text-xs"
+                        >
+                          <TrendingUp className="h-3 w-3 mr-1" />
+                          {signal}
+                        </Badge>
+                      ))}
+                    </div>
+                  </DataSection>
+                )}
+
+              {/* Decision Makers Section - PRECISION ENGINE V3 */}
+              <DataSection
+                title="Décideurs Identifiés"
+                icon={User}
+                defaultOpen={true}
+              >
+                {hasDecisionMaker
+                  ? (
+                    <div className="space-y-4">
+                      {/* PERSISTED INDICATOR - H24 */}
+                      {company.decisionMaker?.linkedinUrl && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="flex items-center gap-2 p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20"
+                        >
+                          <div className="p-1 rounded bg-indigo-500/20">
+                            <Database className="h-3.5 w-3.5 text-indigo-400" />
+                          </div>
+                          <span className="text-xs text-indigo-300 font-medium">
+                            Données persistées • Sauvegardé H24
+                          </span>
+                          <CheckCircle2 className="h-3.5 w-3.5 text-indigo-400 ml-auto" />
+                        </motion.div>
+                      )}
+
+                      {/* 👑 CONTACT PRINCIPAL (Le Décideur) */}
+                      <PrimaryContactCard
+                        decisionMaker={company.decisionMaker!}
+                        companyName={company.name}
+                        targetingAnalysis={company.targetingAnalysis}
+                      />
+
+                      {/* 🛡️ ALTERNATIVE SUGGÉRÉE (Le Relais) */}
+                      {company.alternativeContact && (
+                        <AlternativeContactCard
+                          decisionMaker={company.alternativeContact}
+                          companyName={company.name}
+                        />
+                      )}
+                    </div>
+                  )
+                  : (
+                    <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-white/5">
+                      <div className="w-12 h-12 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center mx-auto mb-3 shadow-sm">
+                        <User className="h-6 w-6 text-zinc-500" />
+                      </div>
+                      <p className="text-zinc-500 text-sm mb-4">
+                        Aucun contact identifié
+                      </p>
+                      <Button
+                        onClick={() => onFindDecisionMaker(company)}
+                        disabled={isFindingDecisionMaker}
+                        className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+                      >
+                        {isFindingDecisionMaker
+                          ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Analyse en cours...
+                            </>
+                          )
+                          : (
+                            <>
+                              <UserSearch className="h-4 w-4" />
+                              Identifier les Décideurs
+                            </>
+                          )}
+                      </Button>
+                    </div>
+                  )}
+              </DataSection>
+            </>
+
+            {/* Refresh Analysis Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onAnalyze(company)}
+              disabled={isAnalyzing}
+              className="w-full bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 mt-4"
+            >
+              <RefreshCw
+                className={cn(
+                  "h-3 w-3 mr-2",
+                  isAnalyzing && "animate-spin",
+                )}
+              />
+              {(company.analysisStatus === "completed" ||
+                  company.analysisStatus === "analyzed")
+                ? "Re-analyser"
+                : "Lancer l'analyse IA"}
+            </Button>
           </div>
         </ScrollArea>
 
@@ -635,7 +632,7 @@ function EngagerContactFooter({
   };
 
   return (
-    <div className="p-4 border-t border-slate-100 bg-slate-50 space-y-2">
+    <div className="p-4 border-t border-zinc-800 bg-zinc-900 space-y-2">
       {isAdded
         ? (
           <>
@@ -647,7 +644,7 @@ function EngagerContactFooter({
               <ExternalLink className="h-4 w-4" />
               Voir la Fiche Prospect
             </Button>
-            <p className="text-xs text-emerald-600 text-center flex items-center justify-center gap-1">
+            <p className="text-xs text-emerald-400 text-center flex items-center justify-center gap-1">
               <CheckCircle2 className="h-3 w-3" />
               Prospect déjà transféré dans la Tour de Contrôle
             </p>
@@ -696,22 +693,22 @@ function AnalysisSkeleton() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: i * 0.1 }}
-          className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-3"
+          className="p-4 rounded-xl bg-zinc-900/50 border border-white/5 space-y-3"
         >
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-slate-200 animate-pulse" />
-            <div className="h-4 w-32 bg-slate-200 rounded animate-pulse" />
+            <div className="w-8 h-8 rounded-lg bg-zinc-800 animate-pulse" />
+            <div className="h-4 w-32 bg-zinc-800 rounded animate-pulse" />
           </div>
           <div className="space-y-2">
-            <div className="h-3 bg-slate-100 rounded animate-pulse" />
-            <div className="h-3 bg-slate-100 rounded w-5/6 animate-pulse" />
-            <div className="h-3 bg-slate-100 rounded w-4/6 animate-pulse" />
+            <div className="h-3 bg-zinc-800 rounded animate-pulse" />
+            <div className="h-3 bg-zinc-800 rounded w-5/6 animate-pulse" />
+            <div className="h-3 bg-zinc-800 rounded w-4/6 animate-pulse" />
           </div>
         </motion.div>
       ))}
       <div className="flex items-center justify-center py-4">
         <motion.div
-          className="flex items-center gap-2 text-slate-400 text-sm"
+          className="flex items-center gap-2 text-zinc-500 text-sm"
           animate={{ opacity: [1, 0.5, 1] }}
           transition={{ duration: 1.5, repeat: Infinity }}
         >
@@ -745,17 +742,17 @@ function PrimaryContactCard({
     <div className="space-y-3">
       {/* Header Badge */}
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-50 border border-amber-200">
-          <Crown className="h-3.5 w-3.5 text-amber-600" />
-          <span className="text-xs font-semibold text-amber-700">
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <Crown className="h-3.5 w-3.5 text-amber-500" />
+          <span className="text-xs font-semibold text-amber-500">
             CONTACT PRINCIPAL
           </span>
         </div>
-        <span className="text-xs text-slate-400">Le Décideur</span>
+        <span className="text-xs text-zinc-500">Le Décideur</span>
       </div>
 
       {/* Main Card */}
-      <div className="relative p-4 rounded-xl bg-gradient-to-br from-amber-50/50 to-white border border-amber-200 shadow-sm overflow-hidden">
+      <div className="relative p-4 rounded-xl bg-gradient-to-br from-amber-500/5 to-zinc-900 border border-amber-500/20 shadow-sm overflow-hidden">
         {/* Score Badge */}
         {score > 0 && (
           <div
@@ -771,7 +768,7 @@ function PrimaryContactCard({
         <div className="flex items-start gap-4">
           {/* Avatar with Crown */}
           <div className="relative">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center text-lg font-semibold text-amber-700 border-2 border-amber-200">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center text-lg font-semibold text-amber-500 border-2 border-amber-500/20">
               {decisionMaker.fullName.charAt(0).toUpperCase()}
             </div>
             <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center">
