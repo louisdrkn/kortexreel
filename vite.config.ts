@@ -19,5 +19,3 @@ export default defineConfig(({ mode }) => ({
     },
   },
 }));
-Forced restart after main.tsx change
-Force restart score breakdown
