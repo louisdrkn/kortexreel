@@ -153,362 +153,290 @@ export function RadarProvider({ children }: { children: ReactNode }) {
         };
     }, [projectData]);
 
-    // Fetch companies from company_analyses table
+    // Fetch companies from 'radar_catch_all' OR 'company_analyses' (Fallback)
     const { data: companies = [], isLoading, refetch } = useQuery({
         queryKey: ["radar-companies", currentProject?.id],
         queryFn: async () => {
             if (!currentProject?.id) return [];
 
+            console.log(
+                "Fetching from radar_catch_all for project:",
+                currentProject.id,
+            );
+
+            // 1. Try Fetching from radar_catch_all (Agent V2 Dumps)
             const { data, error } = await supabase
-                .from("company_analyses")
-                .select("*")
+                .from("radar_catch_all")
                 .select("*")
                 .eq("project_id", currentProject.id)
-                // VISIBILITY FIX: Sort by UPDATE date (Freshness)
-                .order("updated_at", { ascending: false, nullsFirst: false });
+                .order("created_at", { ascending: false });
 
             if (error) {
-                console.error("Error fetching companies:", error);
-                return [];
+                console.error("Error fetching radar_catch_all:", error);
             }
 
-            const result = (data || []).map((row) => {
-                // Parse decision maker, alternative contact, and match origin from custom_hook
-                let decisionMaker = undefined;
-                let alternativeContact = undefined;
-                let targetingAnalysis = undefined;
-                let validatedByCible = false;
-                let validatedByCerveau = false;
-                let matchReason = row.match_explanation;
-                let googleMaps = undefined;
+            let allCompanies: Company[] = [];
 
-                if (row.custom_hook) {
+            // 2. Parse Trigger Events (Agent V2)
+            if (data && data.length > 0) {
+                allCompanies = (data || []).flatMap((row: any) => {
                     try {
-                        const hookData = typeof row.custom_hook === "string"
-                            ? JSON.parse(row.custom_hook)
-                            : row.custom_hook;
+                        const raw = row.raw_data;
+                        if (!raw) return [];
 
-                        // PRECISION ENGINE V3: Primary Contact
+                        // Handle different JSON structures (Direct vs Nested)
+                        let candidates: any[] = [];
+
                         if (
-                            hookData?.decisionMaker || hookData?.primaryContact
+                            raw.data?.companies &&
+                            Array.isArray(raw.data.companies)
                         ) {
-                            const dm = hookData.primaryContact ||
-                                hookData.decisionMaker;
-                            decisionMaker = {
-                                firstName: dm.firstName,
-                                lastName: dm.lastName,
-                                fullName: dm.fullName,
-                                email: dm.email,
-                                linkedinUrl: dm.linkedinUrl,
-                                jobTitle: dm.jobTitle,
-                                confidenceScore: dm.confidenceScore,
-                                matchScore: dm.matchScore,
-                                matchReason: dm.matchReason,
-                                whyThisRole: dm.whyThisRole,
-                                scoreBreakdown: dm.scoreBreakdown,
-                            };
+                            candidates = raw.data.companies;
+                        } else if (
+                            raw.companies && Array.isArray(raw.companies)
+                        ) {
+                            candidates = raw.companies;
+                        } else if (raw.data && Array.isArray(raw.data)) {
+                            candidates = raw.data;
+                        } else if (Array.isArray(raw)) {
+                            candidates = raw;
                         }
 
-                        // PRECISION ENGINE V3: Alternative Contact
-                        if (hookData?.alternativeContact) {
-                            const alt = hookData.alternativeContact;
-                            alternativeContact = {
-                                firstName: alt.firstName,
-                                lastName: alt.lastName,
-                                fullName: alt.fullName,
-                                email: alt.email,
-                                linkedinUrl: alt.linkedinUrl,
-                                jobTitle: alt.jobTitle,
-                                matchScore: alt.matchScore,
-                                matchReason: alt.matchReason,
-                                whyThisRole: alt.whyThisRole,
-                                scoreBreakdown: alt.scoreBreakdown,
-                            };
-                        }
+                        return candidates.map((c: any, index: number) => {
+                            // Fallbacks for variable keys
+                            const name = c.company_name || c.name ||
+                                c["Company Name"] || "Unknown";
+                            let url = c.url || c.website || c.URL || "";
+                            if (url && !url.startsWith("http")) {
+                                url = `https://${url}`;
+                            }
 
-                        // PRECISION ENGINE V3: Targeting Analysis
-                        if (hookData?.targetingAnalysis) {
-                            targetingAnalysis = hookData.targetingAnalysis;
-                        }
+                            // Safe ID generation (row ID + index to ensure uniqueness)
+                            const safeId = `${row.id}-${index}`;
 
-                        // ZERO-DÉCHET: Extract match origin
-                        if (hookData?.validatedByCible !== undefined) {
-                            validatedByCible = hookData.validatedByCible;
-                        }
-                        if (hookData?.validatedByCerveau !== undefined) {
-                            validatedByCerveau = hookData.validatedByCerveau;
-                        }
-                        if (hookData?.matchReason) {
-                            matchReason = hookData.matchReason;
-                        }
-                        if (hookData?.googleMaps) {
-                            googleMaps = hookData.googleMaps;
-                        }
-                    } catch (e) {
-                        // Not JSON, ignore
+                            return {
+                                // Mapped to Company Interface
+                                id: safeId,
+                                name: name,
+                                website: url,
+                                domain: url,
+                                logoUrl: c.logo_url ||
+                                    `https://www.google.com/s2/favicons?domain=${url}&sz=128`,
+                                createdAt: row.created_at,
+                                updatedAt: row.created_at,
+
+                                // MAPPING INTELLIGENT
+                                score: c.relevance_score || 85,
+                                matchExplanation: c.context ||
+                                    c.reason_for_matching ||
+                                    "Identified by Agent",
+                                context: c.context || c.reason_for_matching ||
+                                    "Identified by Agent",
+                                activity: c.activity || "N/A",
+                                strategicAnalysis: c.usage_examples
+                                    ? (Array.isArray(c.usage_examples)
+                                        ? c.usage_examples.join("\n")
+                                        : c.usage_examples)
+                                    : "No specific analysis",
+
+                                status: "hot", // Force display
+                                analysisStatus: "analyzed", // Force display
+                                strategic_category: "PERFECT_MATCH",
+
+                                // Empty arrays for compatibility
+                                trigger_events: [],
+                                detected_pain_points: [],
+                                custom_hook: JSON.stringify(c), // Keep raw data for details
+                            } as Company;
+                        });
+                    } catch (err) {
+                        console.warn("Failed to parse row:", row.id, err);
+                        return [];
                     }
+                });
+            }
+
+            // 3. FALLBACK: If Agent V2 returned nothing, check 'company_analyses' (Legacy / Manual / Direct Insert)
+            if (allCompanies.length === 0) {
+                console.log(
+                    "⚠️ No data in catch_all. Falling back to 'company_analyses'...",
+                );
+                const { data: legacyData, error: legacyError } = await supabase
+                    .from("company_analyses")
+                    .select("*")
+                    .eq("project_id", currentProject.id)
+                    .order("created_at", { ascending: false });
+
+                if (!legacyError && legacyData && legacyData.length > 0) {
+                    console.log(
+                        `✅ Found ${legacyData.length} companies in legacy table.`,
+                    );
+                    allCompanies = legacyData.map((row: any) => ({
+                        id: row.id,
+                        name: row.company_name,
+                        website: row.company_url,
+                        domain: row.company_url,
+                        logoUrl: row.logo_url ||
+                            `https://www.google.com/s2/favicons?domain=${row.company_url}&sz=128`,
+                        createdAt: row.created_at,
+                        updatedAt: row.updated_at,
+                        score: row.match_score || 80,
+                        matchExplanation: row.match_explanation,
+                        context: row.match_explanation,
+                        activity: "Voir Analyse", // Default
+                        strategicAnalysis: row.sales_thesis ||
+                            row.strategic_analysis,
+                        status: "hot",
+                        analysisStatus: row.analysis_status || "analyzed",
+                        strategic_category: row.strategic_category ||
+                            "PERFECT_MATCH",
+                        trigger_events: row.trigger_events || [],
+                        detected_pain_points: row.detected_pain_points || [],
+                        custom_hook: "",
+                    } as Company));
                 }
+            }
 
-                // NEW: Extract Activity from custom_hook if available
-                let activity = undefined;
-                if (row.custom_hook) {
-                    try {
-                        const hookData = typeof row.custom_hook === "string"
-                            ? JSON.parse(row.custom_hook)
-                            : row.custom_hook;
-                        if (hookData?.original_activity) {
-                            activity = hookData.original_activity;
-                        } else if (hookData?.activity) {
-                            activity = hookData.activity;
-                        }
-                    } catch (e) {
-                        // Ignore
-                    }
-                }
-
-                // FRONTEND FALLBACKS:
-                // 1. Name: If "Unknown" or missing, use Domain Name
-                let finalName = row.company_name;
-                if (
-                    (!finalName || finalName === "Unknown") && row.company_url
-                ) {
-                    try {
-                        // Strip protocol and www to get clean name
-                        const urlObj = new URL(
-                            row.company_url.startsWith("http")
-                                ? row.company_url
-                                : `https://${row.company_url}`,
-                        );
-                        finalName = urlObj.hostname.replace("www.", "");
-                    } catch (e) {
-                        finalName = row.company_url;
-                    }
-                }
-
-                // 2. Logo: If missing, use Google Favicon
-                let finalLogo = row.logo_url;
-                if (!finalLogo && row.company_url) {
-                    finalLogo =
-                        `https://www.google.com/s2/favicons?domain=${row.company_url}&sz=128`;
-                }
-
-                // 3. Strategic Category & Fallback Calculation
-                // Cast row to any to access strategic_category without updating global types immediately
-                const rawRow = row as any;
-                let strategicCategory = rawRow.strategic_category;
-
-                if (!strategicCategory) {
-                    // Default to Perfect Match for Agent findings as requested
-                    strategicCategory = "PERFECT_MATCH";
-                }
-
-                return {
-                    id: row.id,
-                    name: finalName || "Entreprise Inconnue", // Ultra fallback
-                    website: row.company_url
-                        ? `https://${row.company_url}`
-                        : undefined,
-                    domain: row.company_url,
-                    logoUrl: finalLogo,
-                    industry: row.industry,
-                    headcount: row.headcount,
-                    location: row.location,
-                    score: 0, // Score is dead
-                    status: "hot", // Always hot since Agent filtered it
-                    signals: Array.isArray(row.buying_signals)
-                        ? row.buying_signals
-                        : [],
-                    tags: row.industry ? [row.industry] : [],
-                    descriptionLong: row.description_long,
-                    painPoints: Array.isArray(row.detected_pain_points)
-                        ? row.detected_pain_points
-                        : [],
-                    buyingSignals: Array.isArray(row.buying_signals)
-                        ? row.buying_signals
-                        : [],
-                    strategicAnalysis: row.strategic_analysis,
-                    customHook: typeof row.custom_hook === "string" &&
-                            !row.custom_hook.startsWith("{")
-                        ? row.custom_hook
-                        : undefined,
-
-                    matchExplanation: row.match_explanation,
-                    context: row.match_explanation, // Map context
-                    activity: activity, // Map activity
-                    analysisStatus: row
-                        .analysis_status as Company["analysisStatus"],
-                    analyzedAt: row.analyzed_at,
-                    createdAt: row.created_at,
-                    updatedAt: row.updated_at, // Ensure we have this for sorting by freshness
-                    decisionMaker,
-                    alternativeContact,
-                    targetingAnalysis,
-                    validatedByCible,
-                    validatedByCerveau,
-                    matchReason,
-                    googleMaps,
-                    strategicCategory,
-                };
-            })
-                .sort((a: any, b: any) => {
-                    // SORT PRIORITY:
-                    // 1. Strategic Category (PERFECT_MATCH > OPPORTUNITY > OUT_OF_SCOPE/Undefined)
-                    // 2. Freshness (updatedAt)
-                    // 3. Score (matchScore)
-
-                    const categoryRank = {
-                        "PERFECT_MATCH": 3,
-                        "OPPORTUNITY": 2,
-                        "OUT_OF_SCOPE": 0,
-                    };
-
-                    const catA = categoryRank[
-                        a.strategicCategory as keyof typeof categoryRank
-                    ] || 1; // Default to 1 (between opp and out)
-                    const catB = categoryRank[
-                        b.strategicCategory as keyof typeof categoryRank
-                    ] || 1;
-
-                    if (catA !== catB) return catB - catA; // Higher rank first
-
-                    // Secondary: Date
-                    const dateA = new Date(a.updatedAt || a.createdAt || 0)
-                        .getTime();
-                    const dateB = new Date(b.updatedAt || b.createdAt || 0)
-                        .getTime();
-                    return dateB - dateA; // Descending Date
-                }) as Company[];
-
-            console.log("🔍 [useRadar] FETCHED COMPANIES:", {
-                total: result.length,
-                top3: result.slice(0, 3).map((c) => ({
-                    name: c.name,
-                    category: c.strategicCategory,
-                    score: c.score,
-                })),
-            });
-
-            return result;
+            console.log(
+                `Parsed ${allCompanies.length} companies total (Agent V2 + Legacy).`,
+            );
+            return allCompanies;
         },
-        enabled: !!currentProject?.id && !manualResetActive, // LOCK QUERY IF RESETTING
+        enabled: !!currentProject?.id,
     });
 
-    // Real-time subscription for company_analyses
+    // Real-time subscription for radar_catch_all (Source of Truth)
     useEffect(() => {
         if (!currentProject?.id) return;
 
+        console.log(
+            "🔌 Subscribing to radar_catch_all for project:",
+            currentProject.id,
+        );
+
         const channel = supabase
-            .channel("radar-companies-realtime")
+            .channel("radar-catch-all-realtime")
             .on(
                 "postgres_changes",
                 {
-                    event: "*", // Listen to ALL events (INSERT + UPDATE)
+                    event: "*", // Listen to INSERT/UPDATE
                     schema: "public",
-                    table: "company_analyses",
+                    table: "radar_catch_all",
                     filter: `project_id=eq.${currentProject.id}`,
                 },
-                (payload) => {
+                async (payload) => {
                     console.log(
-                        "⚡️ REALTIME EVENT:",
+                        "⚡️ REALTIME EVENT (Radar):",
                         payload.eventType,
-                        payload.new,
                     );
 
                     // 1. UPDATE WATCHDOG
+                    // 1. UPDATE WATCHDOG
                     lastActivityRef.current = Date.now();
 
-                    // 2. OPTIMISTIC UI UPDATE
-                    queryClient.setQueryData(
-                        ["radar-companies", currentProject.id],
-                        (oldData: Company[] | undefined) => {
-                            const newRecord = payload.new as any;
+                    // 2. PARSE & INJECT DATA DIRECTLY (REACTIVITY)
+                    const newRow = payload.new as any;
+                    const raw = newRow.raw_data;
 
-                            // Helper to shape the company object
-                            const shapeCompany = (record: any): Company => {
-                                // Fallback Strategy for legacy data (Realtime)
-                                let strategicCategory =
-                                    record.strategic_category;
-                                if (!strategicCategory) {
-                                    strategicCategory = "PERFECT_MATCH";
-                                }
-
-                                return {
-                                    id: record.id,
-                                    name: record.company_name ||
-                                        "New Candidate",
-                                    website: record.company_url
-                                        ? `https://${record.company_url}`
-                                        : undefined,
-                                    domain: record.company_url,
-                                    logoUrl: record.logo_url,
-                                    score: 0,
-                                    status: "hot",
-                                    analysisStatus: record.analysis_status,
-                                    createdAt: record.created_at,
-                                    updatedAt: record.updated_at,
-                                    // Add defaults for other required fields
-                                    tags: [],
-                                    signals:
-                                        Array.isArray(record.buying_signals)
-                                            ? record.buying_signals
-                                            : [],
-                                    painPoints: Array.isArray(
-                                            record.detected_pain_points,
-                                        )
-                                        ? record.detected_pain_points
-                                        : [],
-                                    buyingSignals:
-                                        Array.isArray(record.buying_signals)
-                                            ? record.buying_signals
-                                            : [],
-                                    strategicAnalysis:
-                                        record.strategic_analysis,
-                                    matchExplanation: record.match_explanation,
-                                    descriptionLong: record.description_long ||
-                                        record.strategic_analysis,
-
-                                    strategicCategory,
-                                    // Map real-time fields
-                                    context: record.match_explanation,
-                                    activity: record.custom_hook &&
-                                            typeof record.custom_hook ===
-                                                "string" &&
-                                            record.custom_hook.includes(
-                                                "original_activity",
-                                            )
-                                        ? JSON.parse(record.custom_hook)
-                                            .original_activity
-                                        : undefined,
-                                } as Company;
-                            };
-
-                            const shapedNew = shapeCompany(newRecord);
-
-                            if (!oldData) return [shapedNew];
-
-                            // Check if exists
-                            const exists = oldData.find((c) =>
-                                c.id === shapedNew.id
-                            );
-                            if (exists) {
-                                // UPDATE
-                                return oldData.map((c) =>
-                                    c.id === shapedNew.id
-                                        ? { ...c, ...shapedNew }
-                                        : c
-                                );
-                            } else {
-                                // INSERT
-                                return [shapedNew, ...oldData];
+                    if (raw) {
+                        try {
+                            // Extract Candidates (Same logic as useQuery)
+                            let candidates: any[] = [];
+                            if (
+                                raw.data?.companies &&
+                                Array.isArray(raw.data.companies)
+                            ) {
+                                candidates = raw.data.companies;
+                            } else if (
+                                raw.companies && Array.isArray(raw.companies)
+                            ) {
+                                candidates = raw.companies;
+                            } else if (raw.data && Array.isArray(raw.data)) {
+                                candidates = raw.data;
+                            } else if (Array.isArray(raw)) {
+                                candidates = raw;
                             }
-                        },
-                    );
 
-                    // 3. FORCE INVALIDATE (Safety net)
-                    if (!manualResetActive) {
-                        queryClient.invalidateQueries({
-                            queryKey: ["radar-companies", currentProject.id],
-                        });
+                            // Map to Company Interface
+                            const newCompanies: Company[] = candidates.map(
+                                (c: any, index: number) => {
+                                    const name = c.company_name || c.name ||
+                                        c["Company Name"] || "Unknown";
+                                    let url = c.url || c.website || c.URL || "";
+                                    if (url && !url.startsWith("http")) {
+                                        url = `https://${url}`;
+                                    }
+                                    const safeId = `${newRow.id}-${index}`;
+
+                                    return {
+                                        id: safeId,
+                                        name: name,
+                                        website: url,
+                                        domain: url,
+                                        logoUrl: c.logo_url ||
+                                            `https://www.google.com/s2/favicons?domain=${url}&sz=128`,
+                                        createdAt: newRow.created_at,
+                                        updatedAt: newRow.created_at,
+                                        score: c.relevance_score || 85,
+                                        matchExplanation: c.context ||
+                                            c.reason_for_matching ||
+                                            "Identified by Agent",
+                                        context: c.context ||
+                                            c.reason_for_matching ||
+                                            "Identified by Agent",
+                                        activity: c.activity || "N/A",
+                                        strategicAnalysis: c.usage_examples
+                                            ? (Array.isArray(c.usage_examples)
+                                                ? c.usage_examples.join("\n")
+                                                : c.usage_examples)
+                                            : "No specific analysis",
+                                        status: "hot",
+                                        analysisStatus: "analyzed",
+                                        strategicCategory: "PERFECT_MATCH",
+                                        buyingSignals: [],
+                                        painPoints: [],
+                                        tags: [],
+                                        customHook: JSON.stringify(c),
+                                    } as Company;
+                                },
+                            );
+
+                            if (newCompanies.length > 0) {
+                                console.log(
+                                    `🚀 [REALTIME] Injecting ${newCompanies.length} companies into UI!`,
+                                );
+
+                                // UPDATE CACHE INSTANTLY
+                                queryClient.setQueryData([
+                                    "radar-companies",
+                                    currentProject.id,
+                                ], (oldData: Company[] | undefined) => {
+                                    return [
+                                        ...newCompanies,
+                                        ...(oldData || []),
+                                    ];
+                                });
+
+                                // STOP SCANNING
+                                if (isExecuting) {
+                                    setIsExecuting(false);
+                                    setScanStep("complete");
+                                    setScanProgress(100);
+                                    toast({
+                                        title: "Mission Terminée",
+                                        description:
+                                            `${newCompanies.length} nouvelles opportunités détectées.`,
+                                        className:
+                                            "bg-emerald-500 text-white border-none",
+                                    });
+                                }
+                            }
+                        } catch (err) {
+                            console.error(
+                                "Error parsing realtime payload:",
+                                err,
+                            );
+                        }
                     }
                 },
             )
@@ -530,7 +458,7 @@ export function RadarProvider({ children }: { children: ReactNode }) {
 
         silenceTimerRef.current = setInterval(() => {
             const inactiveDuration = Date.now() - lastActivityRef.current;
-            if (inactiveDuration > 300000) { // 5m silence (Ultimate Patience)
+            if (inactiveDuration > 1800000) { // 30m timeout (For long "Deep Research" jobs)
                 console.log("🛑 SILENCE DETECTED - ENDING SCAN");
                 setIsExecuting(false);
                 setScanStep("complete");
@@ -713,35 +641,52 @@ export function RadarProvider({ children }: { children: ReactNode }) {
             if (error) throw error;
             if (!data.success) throw new Error(data.error);
 
-            console.log("⚔️ EXECUTION STARTED (Async Mode)");
+            console.log(
+                "⚔️ EXECUTION STARTED (Async Mode) - API Returned Success",
+            );
 
             toast({
-                title: "Radar Lancé (Deep Research)",
+                title: "Scan en cours",
                 description:
-                    "L'Agent analyse le web en profondeur. Cela peut prendre 5 à 10 minutes. Restez sur cette page.",
+                    "L'Agent Radar explore le web. Les résultats apparaîtront ici automatiquement.",
             });
 
-            // DO NOT COMPLETE IMMEDIATELY
-            // setScanStep("complete");
-            // setScanProgress(100);
+            // IMMEDIATE COMPLETION OF UI STATE (User Request)
+            setScanStep("searching"); // Keep searching visual until data arrives
 
-            // Instead, rely on the Silence Detection Effect to finish the job
-            // or Realtime events to keep it alive.
+            // SMART RECOVERY (If Backend says "Data is already here")
+            if (data.recovered) {
+                console.log(
+                    "♻️ RECOVERED PREVIOUS SCAN - Fetching results immediately.",
+                );
+                toast({
+                    title: "Restauration",
+                    description: "Résultats d'un scan précédent récupérés.",
+                    className: "bg-blue-500 text-white border-none",
+                });
+                await refetch(); // Force fetch DB
+                setIsExecuting(false);
+                setScanStep("complete");
+                setScanProgress(100);
+                return;
+            }
+
+            // AUTOMATIC POLLING / REFRESH
+            // We don't want to just stop, we want to look for data.
+            // Since API returned 200, the job is "accepted".
+            // We DO NOT wait for data here. The Realtime Listener will wake us up.
+            console.log("👂 Radar is listening for Realtime updates...");
         } catch (err: any) {
             clearInterval(progressInterval);
             console.error("[Radar] Execution Error:", err);
             setScanStep("error");
-            setIsExecuting(false); // Stop the loop on error
+            setIsExecuting(false);
             toast({
                 title: "Erreur d'Exécution",
                 description: err.message,
                 variant: "destructive",
             });
         }
-        // FINALLY BLOCK REMOVED: We want isExecuting to stay TRUE until silence detection kills it
-        // finally {
-        //   setIsExecuting(false);
-        // }
     }, [currentProject?.id, session, proposedStrategy, toast, refetch]);
 
     // Legacy Wrapper for compatibility (optional)
@@ -1172,6 +1117,9 @@ export function RadarProvider({ children }: { children: ReactNode }) {
             queryKey: ["radar-companies", currentProject.id],
         });
         queryClient.setQueryData(["radar-companies", currentProject.id], []);
+        queryClient.invalidateQueries({
+            queryKey: ["radar-companies", currentProject.id],
+        });
 
         toast({
             title: "🔄 Radar Relancé",

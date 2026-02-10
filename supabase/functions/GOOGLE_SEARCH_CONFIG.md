@@ -4,7 +4,7 @@
 
 ### 1. Google Custom Search API Key
 
-- **Clé**: `AIzaSyAPRRvCsXNLqNPnEhrIpR94pFiYbU5OTts`
+- **Clé**: `AIzaSyAApXmqaDiSUUqMHe0QSrL5O6Qk6F6GHI8`
 - **Usage**: Recherche d'entreprises via Google
 - **Localisation**: `supabase/functions/_shared/api-clients.ts`
 
@@ -22,7 +22,7 @@ dans Supabase :
 
 ```bash
 # Dans Supabase Dashboard > Project Settings > Edge Functions > Secrets
-GOOGLE_SEARCH_API_KEY=AIzaSyAPRRvCsXNLqNPnEhrIpR94pFiYbU5OTts
+GOOGLE_SEARCH_API_KEY=AIzaSyAApXmqaDiSUUqMHe0QSrL5O6Qk6F6GHI8
 GOOGLE_SEARCH_ENGINE_ID=017576662512468239146:omuauf_lfve
 ```
 
@@ -62,7 +62,7 @@ Pour tester localement :
 
 ```bash
 # Dans votre fichier .env local
-GOOGLE_SEARCH_API_KEY=AIzaSyAPRRvCsXNLqNPnEhrIpR94pFiYbU5OTts
+GOOGLE_SEARCH_API_KEY=AIzaSyAApXmqaDiSUUqMHe0QSrL5O6Qk6F6GHI8
 GOOGLE_SEARCH_ENGINE_ID=017576662512468239146:omuauf_lfve
 ```
 

@@ -255,13 +255,14 @@ export function CompanyCard(
         "relative w-full text-left",
         "cursor-pointer",
         "rounded-xl",
-        "bg-zinc-900/40 backdrop-blur-md", // Glassmorphism
-        "border border-white/5", // Subtle border
-        "shadow-lg shadow-black/40",
+        // GLASSMORPHISM & DEPTH - As requested
+        "bg-zinc-900/40 backdrop-blur-md",
+        "border border-white/10",
+        "shadow-xl shadow-black/50",
         "transition-all duration-300 ease-out",
-        // Premium hover shadow with neon glow - Indigo/Violet
-        "hover:shadow-[0_0_20px_-5px_rgba(99,102,241,0.3)]",
-        "hover:border-indigo-500/50 hover:bg-zinc-900/60",
+        // HOVER EFFECTS
+        "hover:shadow-2xl hover:shadow-violet-500/10",
+        "hover:border-violet-500/30 hover:bg-zinc-900/60",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40",
         "group overflow-hidden",
         // Persisted decision maker: subtle violet accent override
@@ -270,10 +271,12 @@ export function CompanyCard(
       )}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.4, delay: index * 0.1, ease: "easeOut" }} // Stagger handled by parent usually, but local delay kept as fallback
       whileHover={{
-        y: -4,
-        transition: { duration: 0.25, ease: "easeOut" },
+        y: -4, // Lift effect
+        scale: 1.01, // Slight scale
+        transition: { duration: 0.2, ease: "easeOut" },
       }}
     >
       {/* Top Right — Scan OR Persisted */}

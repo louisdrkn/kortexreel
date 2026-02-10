@@ -39,9 +39,9 @@ export const corsHeaders = {
 };
 
 export const GEMINI_MODELS = {
-  PRO: "gemini-2.5-pro", // The valid V2 model
-  FLASH: "gemini-2.5-pro", // Using V2 Flash Exp
-  ULTRA: "gemini-2.5-pro", // Unified on V2
+  PRO: "gemini-1.5-pro",
+  FLASH: "gemini-2.0-flash",
+  ULTRA: "gemini-1.5-pro",
 };
 
 // ============================================================================

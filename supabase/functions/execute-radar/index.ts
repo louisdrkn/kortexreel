@@ -31,6 +31,7 @@ const corsHeaders = {
 interface ExecuteRequest {
   projectId: string;
   approved_queries: string[];
+  force_refresh?: boolean;
 }
 
 interface TargetCriteria {
@@ -133,7 +134,7 @@ interface StrategicIdentity {
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 // ============================================================================
 // SYSTEM INSTRUCTION (STRICT GATEKEEPER MODE)
@@ -202,7 +203,10 @@ async function generateJSONWithRetry<T>(
         threshold: HarmBlockThreshold.BLOCK_NONE,
       },
     ],
-    generationConfig: { responseMimeType: "application/json" },
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.7,
+    },
   });
 
   try {
@@ -310,6 +314,15 @@ async function isUrlReachable(url: string): Promise<boolean> {
     return resp.ok || resp.status === 403;
   } catch {
     return false;
+  }
+}
+
+function normalizeUrlForDedup(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return url.toLowerCase().replace(/^www\./, "");
   }
 }
 
@@ -561,7 +574,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   try {
     const requestData = await req.json() as ExecuteRequest;
-    const { projectId, approved_queries } = requestData;
+    const { projectId, approved_queries, force_refresh } = requestData;
     if (!projectId) throw new Error("Missing projectId");
     if (!approved_queries || approved_queries.length === 0) {
       throw new Error("No queries provided");
@@ -579,13 +592,106 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const geminiApiKey = Deno.env.get("GOOGLE_API_KEY") ||
-      Deno.env.get("GEMINI_API_KEY");
+    let geminiApiKey = Deno.env.get("GEMINI_API_KEY") || "";
+    // Sanitize: Remove quotes if present and trim
+    geminiApiKey = geminiApiKey.replace(/^["']|["']$/g, "").trim();
+
+    if (!geminiApiKey) {
+      console.error("[CRITICAL] GEMINI_API_KEY is missing or empty.");
+      throw new Error("Missing GEMINI_API_KEY");
+    }
+
+    // Debug Log (Safety Masked)
+    console.log(
+      `[DEBUG] Loaded GEMINI_API_KEY: ${
+        geminiApiKey.substring(0, 6)
+      }... (Length: ${geminiApiKey.length})`,
+    );
+
     const firecrawlKey = Deno.env.get("FIRECRAWL_API_KEY") ||
       Deno.env.get("FIRECRAWL");
-    if (!geminiApiKey || !firecrawlKey) throw new Error("Missing Keys");
+    if (!firecrawlKey) throw new Error("Missing FIRECRAWL_API_KEY");
 
     const gemini = new GoogleGenerativeAI(geminiApiKey);
+
+    // ========================================================================
+    // 1. SMART RECOVERY (SYNCHRONOUS CHECK)
+    // ========================================================================
+    // Check if we already have fresh results (< 24h) to save credits/time
+    // This MUST be done synchronously to notify the frontend immediately.
+
+    if (!force_refresh) {
+      console.log(`[SYNC] Checking for existing fresh data to recover...`);
+
+      // Check radar_catch_all for recent entries
+      const { data: existingData } = await supabase
+        .from("radar_catch_all")
+        .select("created_at")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (existingData) {
+        const lastScan = new Date(existingData.created_at).getTime();
+        const now = Date.now();
+        const hoursSince = (now - lastScan) / (1000 * 60 * 60);
+
+        if (hoursSince < 24) {
+          console.log(
+            `[CACHE] Found recent scan in radar_catch_all (${
+              hoursSince.toFixed(1)
+            }h ago). Recovering.`,
+          );
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              recovered: true,
+              message: "Recovered recent scan from cache",
+            }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 200,
+            },
+          );
+        }
+      }
+
+      // FALLBACK: Check company_analyses for recent activity (Legacy Support)
+      const { data: latestAnalysis } = await supabase
+        .from("company_analyses")
+        .select("updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (latestAnalysis) {
+        const lastUpdate = new Date(latestAnalysis.updated_at).getTime();
+        const hoursSinceAnalysis = (Date.now() - lastUpdate) /
+          (1000 * 60 * 60);
+        if (hoursSinceAnalysis < 24) {
+          console.log(
+            `[CACHE] Found recent analyses in company_analyses (${
+              hoursSinceAnalysis.toFixed(1)
+            }h ago). Recovering.`,
+          );
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              recovered: true,
+              message: "Recovered recent analyses from legacy cache",
+            }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 200,
+            },
+          );
+        }
+      }
+    }
 
     // ========================================================================
     // BACKGROUND TASK WRAPPER
@@ -594,34 +700,25 @@ Deno.serve(async (req: Request): Promise<Response> => {
       let userId: string | undefined;
       const rawCandidates: Candidate[] = []; // Moved to top-level scope to fix visibility issues
 
-      // HELPER: Black Box Recorder
+      // HELPER: Universal System Logger (Long Term Memory)
       const logToDB = async (title: string, content: string) => {
-        console.log(`[BLACKBOX] ${title}`);
-        if (
-          title.includes("FAIL") || title.includes("ERROR") ||
-          title.includes("CRITICAL")
-        ) {
-          // EMERGENCY LOGGING ONLY
-          if (!userId) {
-            console.warn(`[BLACKBOX] Cannot log '${title}' to DB: No User ID`);
-            return;
-          }
-          await supabase.from("company_analyses").upsert({
+        const isError = title.includes("FAIL") || title.includes("ERROR") ||
+          title.includes("CRITICAL");
+        const status = isError ? "ERROR" : "INFO";
+        console.log(`[SYSTEM_LOG] [${status}] ${title}`);
+
+        // Write to system_logs
+        try {
+          await supabase.from("system_logs").insert({
             project_id: projectId,
-            user_id: userId,
-            company_url: `http://log.${Date.now()}.${
-              Math.random()
-                .toString(36)
-                .substring(7)
-            }.local`,
-            company_name: `[ERROR] ${title}`,
-            analysis_status: "processing",
-            match_explanation: title,
-            sales_thesis: content.substring(0, 10000), // Prevent overflow
-            updated_at: new Date().toISOString(),
+            function_name: "execute-radar",
+            step_name: title,
+            status: status,
+            details: content ? content.substring(0, 10000) : "No details",
+            created_at: new Date().toISOString(),
           });
-        } else {
-          console.log(`[BLACKBOX-SILENT] ${title}`);
+        } catch (e) {
+          console.warn("[SYSTEM_LOG] Failed to write log:", e);
         }
       };
 
@@ -679,31 +776,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
           .select("company_url").eq("project_id", projectId);
         const existingUrls = new Set(
           existingRows?.map((r) =>
-            r.company_url
+            normalizeUrlForDedup(r.company_url)
           ),
         );
-
-        // FIRECRAWL AGENT SCHEMA
-        const agentSchema = {
-          type: "object",
-          properties: {
-            candidates: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  company_name: { type: "string" },
-                  url: { type: "string" },
-                  short_description: { type: "string" },
-                  reason_for_matching: { type: "string" },
-                  location_country: { type: "string" },
-                },
-                required: ["company_name", "url", "reason_for_matching"],
-              },
-            },
-          },
-          required: ["candidates"],
-        };
 
         // SEARCH & COLLECT (AGENT-TO-AGENT MODE)
         // rawCandidates definition moved to top of function
@@ -728,37 +803,42 @@ Deno.serve(async (req: Request): Promise<Response> => {
           );
 
           try {
-            // A. START AGENT JOB (SCHEMA-FREE "BRAIN DRAIN" MODE)
-            // We append strict formatting instructions to the PROMPT instead of the SCHEMA.
+            // NEW: DYNAMIC VARIABLES
+            const mission_instruction = missionBrief; // missionBrief is a full instruction from Strategizer
+            const past_clients_list = pastClientsList.length > 0
+              ? pastClientsList.map((c) =>
+                `- ${c.name} (${c.description || "N/A"})`
+              ).join("\n")
+              : "Aucun historique disponible pour le moment.";
 
-            const pastClientsContext = pastClientsList.length > 0
-              ? `\n\nREFERENCE MODELS (PAST CLIENTS) - Look for similar profiles:\n${
-                pastClientsList.map((c) =>
-                  `- ${c.name}: ${c.description || "No description"}`
-                ).join("\n")
-              }`
-              : "";
+            const enhancedPrompt = `
+[RÔLE]
+Tu es le Moteur d'Intelligence Artificielle de Kortex, un expert en stratégie de croissance B2B.
 
-            const enhancedPrompt = `${missionBrief}
-            ${pastClientsContext}
-            
-            [ROLE]
-            Tu es un expert en développement commercial B2B pour le marché français.
-            [TASK] Trouve et analyse 20 entreprises pertinentes correspondant aux critères.
+[MISSION PRIORITAIRE]
+${mission_instruction}
 
-            [LANGUAGE CONSTRAINTS - CRITICAL]
+[MÉMOIRE & APPRENTISSAGE (DO NOT DUPLICATE)] Voici les clients existants ou déjà traités (NE PAS LES RESSORTIR, mais analyse leur profil pour trouver des "Lookalikes" similaires) : 
+[ ${past_clients_list} ]
 
-            ALL CONTENT MUST BE IN FRENCH: Les champs 'activity', 'context', 'usage_examples' doivent être rédigés en français impeccable.
+[INSTRUCTIONS DE RECHERCHE SUPPLÉMENTAIRES]
 
-            JSON KEYS MUST REMAIN IN ENGLISH: Ne traduis PAS les clés du JSON (ex: garde 'company_name', 'url', 'context'). Seules les valeurs (le texte) doivent être en français.
+OBJECTIF GLOBAL : Trouve 10 nouvelles entreprises pertinentes.
 
-            [OUTPUT] Retourne un JSON valide avec la liste sous la clé 'companies'.
-            
-            CRITICAL OVERRIDE: IGNORE any quantity requested in the main query.
-            1. STRICT LIMIT: STOP searching as soon as you have 20 candidates.
-            2. QUOTA: Your absolute CAP is 20. Do not find 35. Find 20.
-            3. SPEED: Return immediately after 20 matches.
-            4. BEST EFFORT: If you have less, return them.`;
+ANALYSE : Pour chaque entreprise, demande-toi : "Est-ce un bon fit par rapport à la Mission ?".
+
+FILTRAGE :
+IGNORE les annuaires, les offres d'emploi, et les articles de presse (déjà géré par le kill switch).
+IGNORE les entreprises déjà listées dans la section [MÉMOIRE].
+Cherche le site web officiel de l'entreprise.
+
+[CONTRAINTES DE LANGUE & FORMAT]
+FORMAT DE SORTIE : JSON strict.
+CLÉS JSON (TECHNIQUE) : Garde impérativement les clés en ANGLAIS pour le code ('company_name', 'url', 'activity', 'relevance_score', 'usage_examples').
+VALEURS (CONTENU) : Tout le texte visible doit être en FRANÇAIS professionnel et vendeur.
+
+[STRUCTURE JSON ATTENDUE] { "companies": [ { "company_name": "Nom Exact", "url": "https://site-officiel.com", "activity": "Description courte et percutante de leur métier.", "relevance_score": 85, // Note de 0 à 100 selon le fit avec la cible "context": "Pourquoi c'est une cible parfaite (ex: Croissance détectée, Technologie compatible...)", "usage_examples": "1. Idée concrète d'automatisation ou d'approche..." } ] } 
+            `;
 
             await logToDB(
               `MISSION_START`,
@@ -930,6 +1010,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
                   JSON.stringify(statusData),
                 );
 
+                // DEBUG: Inspect structure
+                if (statusData.data) {
+                  console.log(
+                    "[DEBUG] statusData.data Keys:",
+                    Object.keys(statusData.data),
+                  );
+                  if (typeof statusData.data === "object") {
+                    console.log(
+                      "[DEBUG] statusData.data Sample:",
+                      JSON.stringify(statusData.data).substring(0, 200),
+                    );
+                  }
+                }
+
                 let candidates: any[] = [];
                 // SIMPLIFIED PARSING LOGIC (v2.2)
 
@@ -979,7 +1073,90 @@ Deno.serve(async (req: Request): Promise<Response> => {
                   // 4. Fallback ultime : Stringify
                   else text = typeof d === "string" ? d : JSON.stringify(d);
 
-                  // NEW: BRAIN DRAIN STRATEGY (GEMINI EXTRACTION)
+                  // 🧹 CLEANING UTILS (CRITICAL FIX)
+                  const cleanText = text.replace(/```json/g, "").replace(
+                    /```/g,
+                    "",
+                  ).trim();
+
+                  // DEBUG: Log Raw Output before parsing
+                  console.log(
+                    "RAW FIRECRAWL OUTPUT (Cleaned):",
+                    cleanText.substring(0, 500) + "...",
+                  );
+
+                  try {
+                    const parsed = JSON.parse(cleanText);
+
+                    // 1. Check for { companies: [...] } (New Prompt Structure)
+                    if (parsed.companies && Array.isArray(parsed.companies)) {
+                      console.log(
+                        `[PARSER] Found 'companies' key with ${parsed.companies.length} items.`,
+                      );
+                      candidates = parsed.companies;
+                    } // 2. Check for direct array
+                    else if (Array.isArray(parsed)) {
+                      console.log(
+                        `[PARSER] Found direct array with ${parsed.length} items.`,
+                      );
+                      candidates = parsed;
+                    } // 3. Check for 'candidates' or 'prospects'
+                    else if (
+                      parsed.candidates && Array.isArray(parsed.candidates)
+                    ) {
+                      candidates = parsed.candidates;
+                    } else if (
+                      parsed.prospects && Array.isArray(parsed.prospects)
+                    ) {
+                      candidates = parsed.prospects;
+                    }
+                  } catch (e) {
+                    console.warn(
+                      "[PARSER] JSON Parse failed on direct text. Falling back to Gemini Extraction.",
+                      e,
+                    );
+                  }
+
+                  if (candidates.length > 0) {
+                    console.log(
+                      `[PARSER] SUCCESSFULLY EXTRACTED ${candidates.length} CANDIDATES FROM TEXT.`,
+                    );
+                    // Map to rawCandidates immediately to avoid breaking the flow
+                    for (const c of candidates) {
+                      // RELAXED MAPPING DUPLICATED HERE FOR SAFETY
+                      let finalUrl = c.url || c.website || c.URL ||
+                        "http://unknown.com";
+                      const finalName = c.company_name || c.name ||
+                        c["Company Name"] || "Unknown";
+                      if (
+                        finalUrl !== "http://unknown.com" &&
+                        !finalUrl.startsWith("http")
+                      ) finalUrl = `https://${finalUrl}`;
+
+                      const normalizedUrl = normalizeUrlForDedup(finalUrl);
+                      if (!existingUrls.has(normalizedUrl)) {
+                        rawCandidates.push({
+                          url: finalUrl,
+                          source_query: missionBrief,
+                          company_name: finalName,
+                          logo_url: "",
+                          status: "analyzed",
+                          is_agent_verified: true,
+                          match_reason: c.match_reason ||
+                            c.reason_for_matching || c.context ||
+                            "Identified by Agent",
+                          activity: c.activity || c.description,
+                        });
+                        existingUrls.add(normalizedUrl);
+                        console.log(`[DEDUP] Added New Candidate: ${finalUrl}`);
+                      } else {
+                        console.log(`[DEDUP] Skipped Duplicate: ${finalUrl}`);
+                      }
+                    }
+                    break; // Mission Saved via Direct Parse
+                  }
+
+                  // NEW: BRAIN DRAIN STRATEGY (GEMINI EXTRACTION) if clean parse failed
                   console.log(
                     "[AGENT] Structured Parse Failed. Activating BRAIN DRAIN (Gemini Extraction)...",
                   );
@@ -995,7 +1172,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
                     );
                     rawCandidates.push(...extracted);
                     // Add to existingUrls to prevent dupes in same batch
-                    extracted.forEach((c) => existingUrls.add(c.url));
+                    extracted.forEach((c) => {
+                      const nUrl = normalizeUrlForDedup(c.url);
+                      if (!existingUrls.has(nUrl)) {
+                        existingUrls.add(nUrl);
+                      }
+                    });
                     break; // Mission Saved
                   }
                 }
@@ -1032,7 +1214,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
                     finalUrl = `https://${finalUrl}`;
                   }
 
-                  if (existingUrls.has(finalUrl)) {
+                  const normalizedUrl = normalizeUrlForDedup(finalUrl);
+                  if (existingUrls.has(normalizedUrl)) {
+                    console.log(`[DEDUP] Skipped Duplicate: ${finalUrl}`);
                     continue;
                   }
 
@@ -1048,7 +1232,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
                       c.context || "Identified by Agent",
                     activity: c.activity || c.description,
                   });
-                  existingUrls.add(finalUrl);
+                  existingUrls.add(normalizedUrl);
+                  console.log(`[DEDUP] Added New Candidate: ${finalUrl}`);
                 }
                 break; // Mission Complete
               }

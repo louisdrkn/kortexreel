@@ -69,7 +69,7 @@ interface DocumentRow {
 // ============================================================================
 // CONSTANTS - GEMINI MODEL
 // ============================================================================
-const GEMINI_MODEL = "gemini-2.5-pro";
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 // ============================================================================
 // SYSTEM INSTRUCTION (Draconian Truth Mode)
@@ -263,7 +263,7 @@ async function generateJSONWithRetry<T>(
   const fullPrompt = `${systemInstruction}\n\n${prompt}`;
 
   const model = gemini.getGenerativeModel({
-    model: GEMINI_MODEL, // gemini-2.5-pro (Defined in constants)
+    model: GEMINI_MODEL, // gemini-2.0-flash
     safetySettings: [
       {
         category: HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -424,17 +424,29 @@ serve(async (req: Request): Promise<Response> => {
     console.log(`[STRATEGIZE] 🚀 Starting for Project: ${projectId}`);
 
     // 3. INITIALISATION CLIENTS (Supabase & Gemini)
+    // 3. INITIALISATION CLIENTS (Supabase & Gemini)
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const geminiApiKey = Deno.env.get("GOOGLE_API_KEY") ||
-      Deno.env.get("GEMINI_API_KEY");
+
+    // STRICT: Only use GEMINI_API_KEY
+    let geminiApiKey = Deno.env.get("GEMINI_API_KEY") || "";
+    // Sanitize: Remove quotes if present and trim
+    geminiApiKey = geminiApiKey.replace(/^["']|["']$/g, "").trim();
 
     if (!supabaseUrl || !supabaseKey) {
       throw new Error("Missing Supabase credentials");
     }
     if (!geminiApiKey) {
+      console.error("[CRITICAL] GEMINI_API_KEY is missing or empty.");
       throw new Error("Missing GEMINI_API_KEY");
     }
+
+    // Debug Log (Safety Masked)
+    console.log(
+      `[DEBUG] Loaded GEMINI_API_KEY: ${
+        geminiApiKey.substring(0, 6)
+      }... (Length: ${geminiApiKey.length})`,
+    );
 
     const supabase = createClient(supabaseUrl, supabaseKey);
     const gemini = new GoogleGenerativeAI(geminiApiKey);

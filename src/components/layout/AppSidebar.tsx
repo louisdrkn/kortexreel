@@ -159,7 +159,7 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-sidebar-border bg-[hsl(222,47%,11%)] transition-all duration-300 ease-out",
+        "flex flex-col border-r border-white/5 bg-slate-900/60 backdrop-blur-xl transition-all duration-300 ease-out",
         collapsed ? "w-[72px]" : "w-[260px]",
       )}
     >
@@ -174,14 +174,14 @@ export function AppSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex-1 space-y-2 p-3">
         <div
           className={cn(
-            "mb-3 px-3 py-2",
-            collapsed && "hidden",
+            "mb-3 px-3 py-2 transition-opacity duration-300",
+            collapsed ? "hidden opacity-0" : "block opacity-100",
           )}
         >
-          <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
             Navigation
           </span>
         </div>
@@ -191,31 +191,45 @@ export function AppSidebar() {
             to={item.url}
             end={item.url === "/"}
             className={cn(
-              "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-sidebar-foreground transition-all duration-200",
-              "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300 ease-out",
+              // Default State
+              "text-muted-foreground hover:text-white hover:bg-white/5",
+              // Hover Animation
+              "hover:translate-x-1",
               collapsed && "justify-center px-2",
             )}
-            activeClassName="bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-6 before:w-1 before:rounded-r-full before:bg-primary"
+            activeClassName="bg-gradient-to-r from-primary/20 to-transparent text-white"
           >
-            <item.icon
-              className={cn(
-                "h-[18px] w-[18px] shrink-0 transition-colors",
-                "group-hover:text-sidebar-accent-foreground",
-              )}
-            />
-            {!collapsed && <span>{item.title}</span>}
+            {({ isActive }) => (
+              <>
+                {/* Active Laser Indicator */}
+                {isActive && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 h-full w-[3px] bg-primary shadow-[0_0_12px_var(--primary)] rounded-r-full" />
+                )}
+
+                <item.icon
+                  className={cn(
+                    "h-[18px] w-[18px] shrink-0 transition-all duration-300",
+                    isActive
+                      ? "text-primary drop-shadow-[0_0_8px_rgba(var(--primary),0.5)]"
+                      : "text-muted-foreground/70 group-hover:text-white",
+                  )}
+                />
+                {!collapsed && <span>{item.title}</span>}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>
 
       {/* Collapse toggle */}
-      <div className="border-t border-sidebar-border p-3">
+      <div className="border-t border-white/5 p-3">
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "w-full justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-sidebar-accent",
+            "w-full justify-center rounded-xl text-muted-foreground hover:text-white hover:bg-white/5 transition-all duration-300",
             !collapsed && "justify-start gap-2",
           )}
         >

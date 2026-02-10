@@ -1,4 +1,5 @@
 import { ElementType, useEffect, useRef, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { CommandHeader } from "@/components/layout/CommandHeader";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -106,6 +107,33 @@ export function RadarLayout() {
       );
     }
   }, [companies, projectId]);
+
+  // DIAGNOSTIC AGRESSIF
+  useEffect(() => {
+    const runDiagnostics = async () => {
+      console.log("🛑 DÉMARRAGE DIAGNOSTIC 🛑");
+      console.log("👉 Projet ID cherché :", projectId);
+      // 1. Test de lecture simple
+      const { data, error } = await supabase
+        .from("radar_catch_all" as any)
+        .select("*")
+        .eq("project_id", projectId);
+      if (error) {
+        console.error("❌ ERREUR SUPABASE CRITIQUE :", error);
+        alert("ERREUR SUPABASE: " + error.message); // On veut le voir à l'écran
+      } else {
+        console.log("✅ SUPABASE A RÉPONDU. Nombre de lignes :", data?.length);
+        if (data && data.length > 0) {
+          console.log("📦 PREMIÈRE LIGNE BRUTE :", data[0]);
+          console.log("📦 CONTENU RAW_DATA :", (data[0] as any).raw_data);
+        } else {
+          console.warn("⚠️ AUCUNE DONNÉE TROUVÉE POUR CET ID.");
+        }
+      }
+    };
+
+    if (projectId) runDiagnostics();
+  }, [projectId]);
 
   // Filter companies locally - exclude archived/excluded
   const filteredCompanies = companies.filter((c) => {
