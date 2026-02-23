@@ -47,6 +47,7 @@ interface RadarContextType {
     proposedStrategy: any;
     isStrategizing: boolean;
     isExecuting: boolean;
+    cancelScan: () => Promise<void>;
     analyzingCompanyId: string | null;
     analyzeCompany: (company: Company) => Promise<AnalysisResult | null>;
     isFindingDecisionMaker: boolean;
@@ -110,7 +111,53 @@ export function RadarProvider({ children }: { children: ReactNode }) {
     const [isStrategizing, setIsStrategizing] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
 
+    // FIX 1: Ref mirror of isExecuting — used in realtime callbacks to avoid
+    // stale closure issues without adding isExecuting to the useEffect dep array
+    // (which would destroy/recreate the channel every time a scan starts).
+    const isExecutingRef = useRef(false);
+    useEffect(() => {
+        isExecutingRef.current = isExecuting;
+    }, [isExecuting]);
+
+    // FIX 3: Ref to the polling fallback interval so it can be cleared anytime
+    const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
     const scanChannelRef = useRef<any>(null);
+
+    // Cancel any ongoing scan — stops polling, resets UI, marks DB cancelled
+    const cancelScan = async () => {
+        console.log("[Radar] ⛔ Cancelling scan...");
+        // Stop all intervals
+        if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+        }
+        // Reset UI state
+        setIsExecuting(false);
+        setIsStrategizing(false);
+        setScanStep("idle");
+        setScanProgress(0);
+        setIsScanning(false);
+        isExecutingRef.current = false;
+        // Mark DB as cancelled (best-effort)
+        try {
+            if (currentProject?.id) {
+                await supabase
+                    .from("radar_scans" as any)
+                    .update({
+                        status: "cancelled",
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq("project_id", currentProject.id)
+                    .in("status", ["processing", "queued", "searching"]);
+            }
+        } catch { /* non-blocking */ }
+        toast({
+            title: "⛔ Scan annulé",
+            description: "Le scan a été arrêté.",
+            className: "bg-zinc-900 text-white border-zinc-700",
+        });
+    };
 
     // Fetch project context (DNA) to check what's configured
     const { data: projectData } = useQuery({
@@ -153,6 +200,53 @@ export function RadarProvider({ children }: { children: ReactNode }) {
         };
     }, [projectData]);
 
+    // Helper: map a radar_catch_all row directly to the Company interface
+    // Each row IS one company — columns company_name & website_url are the source of truth.
+    const mapCatchAllRowToCompany = (row: any): Company | null => {
+        try {
+            const name = row.company_name || row.name || "Unknown";
+            let url = row.website_url || row.url || row.website || "";
+            if (url && !url.startsWith("http")) url = `https://${url}`;
+            if (!name || name === "Unknown") return null;
+
+            return {
+                id: String(row.id),
+                name,
+                website: url || undefined,
+                domain: url || undefined,
+                logoUrl: url
+                    ? `https://www.google.com/s2/favicons?domain=${
+                        new URL(url).hostname
+                    }&sz=128`
+                    : undefined,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at || row.created_at,
+
+                // IA-sourced fields from dedicated columns
+                industry: row.activity_sector || undefined,
+                matchReason: row.pain_point_context ||
+                    "Identifié par l'Agent Firecrawl",
+                matchExplanation: row.pain_point_context ||
+                    "Identifié par l'Agent Firecrawl",
+                context: row.pain_point_context ||
+                    "Identifié par l'Agent Firecrawl",
+                activity: row.activity_sector || "N/A",
+
+                score: 85,
+                status: "hot",
+                analysisStatus: "discovered",
+                strategicCategory: "PERFECT_MATCH",
+
+                signals: [],
+                painPoints: [],
+                buyingSignals: [],
+                tags: [],
+            } as Company;
+        } catch {
+            return null;
+        }
+    };
+
     // Fetch companies from 'radar_catch_all' OR 'company_analyses' (Fallback)
     const { data: companies = [], isLoading, refetch } = useQuery({
         queryKey: ["radar-companies", currentProject?.id],
@@ -160,106 +254,38 @@ export function RadarProvider({ children }: { children: ReactNode }) {
             if (!currentProject?.id) return [];
 
             console.log(
-                "Fetching from radar_catch_all for project:",
+                "[Radar] Fetching from radar_catch_all for project:",
                 currentProject.id,
             );
 
-            // 1. Try Fetching from radar_catch_all (Agent V2 Dumps)
+            // 1. Try Fetching from radar_catch_all — one row = one company
             const { data, error } = await supabase
-                .from("radar_catch_all")
+                .from("radar_catch_all" as any)
                 .select("*")
                 .eq("project_id", currentProject.id)
                 .order("created_at", { ascending: false });
 
             if (error) {
-                console.error("Error fetching radar_catch_all:", error);
+                console.error("[Radar] Error fetching radar_catch_all:", error);
             }
 
             let allCompanies: Company[] = [];
 
-            // 2. Parse Trigger Events (Agent V2)
+            // 2. Map each row directly (company_name & website_url are top-level columns)
             if (data && data.length > 0) {
-                allCompanies = (data || []).flatMap((row: any) => {
-                    try {
-                        const raw = row.raw_data;
-                        if (!raw) return [];
+                allCompanies = (data as any[])
+                    .map(mapCatchAllRowToCompany)
+                    .filter((c): c is Company => c !== null);
 
-                        // Handle different JSON structures (Direct vs Nested)
-                        let candidates: any[] = [];
-
-                        if (
-                            raw.data?.companies &&
-                            Array.isArray(raw.data.companies)
-                        ) {
-                            candidates = raw.data.companies;
-                        } else if (
-                            raw.companies && Array.isArray(raw.companies)
-                        ) {
-                            candidates = raw.companies;
-                        } else if (raw.data && Array.isArray(raw.data)) {
-                            candidates = raw.data;
-                        } else if (Array.isArray(raw)) {
-                            candidates = raw;
-                        }
-
-                        return candidates.map((c: any, index: number) => {
-                            // Fallbacks for variable keys
-                            const name = c.company_name || c.name ||
-                                c["Company Name"] || "Unknown";
-                            let url = c.url || c.website || c.URL || "";
-                            if (url && !url.startsWith("http")) {
-                                url = `https://${url}`;
-                            }
-
-                            // Safe ID generation (row ID + index to ensure uniqueness)
-                            const safeId = `${row.id}-${index}`;
-
-                            return {
-                                // Mapped to Company Interface
-                                id: safeId,
-                                name: name,
-                                website: url,
-                                domain: url,
-                                logoUrl: c.logo_url ||
-                                    `https://www.google.com/s2/favicons?domain=${url}&sz=128`,
-                                createdAt: row.created_at,
-                                updatedAt: row.created_at,
-
-                                // MAPPING INTELLIGENT
-                                score: c.relevance_score || 85,
-                                matchExplanation: c.context ||
-                                    c.reason_for_matching ||
-                                    "Identified by Agent",
-                                context: c.context || c.reason_for_matching ||
-                                    "Identified by Agent",
-                                activity: c.activity || "N/A",
-                                strategicAnalysis: c.usage_examples
-                                    ? (Array.isArray(c.usage_examples)
-                                        ? c.usage_examples.join("\n")
-                                        : c.usage_examples)
-                                    : "No specific analysis",
-
-                                status: "hot", // Force display
-                                analysisStatus: "analyzed", // Force display
-                                strategic_category: "PERFECT_MATCH",
-
-                                // Empty arrays for compatibility
-                                trigger_events: [],
-                                detected_pain_points: [],
-                                custom_hook: JSON.stringify(c), // Keep raw data for details
-                            } as Company;
-                        });
-                    } catch (err) {
-                        console.warn("Failed to parse row:", row.id, err);
-                        return [];
-                    }
-                });
+                console.log(
+                    `[Radar] ✅ Mapped ${allCompanies.length} companies from radar_catch_all.`,
+                );
             }
 
-            // 3. FALLBACK: If Agent V2 returned nothing, check 'company_analyses' (Legacy / Manual / Direct Insert)
+            // 3. FALLBACK: If catch_all is empty, check 'company_analyses' (Legacy)
             if (allCompanies.length === 0) {
                 console.log(
-                    "⚠️ No data in catch_all. Falling back to 'company_analyses'...",
+                    "[Radar] ⚠️ No data in catch_all. Falling back to 'company_analyses'...",
                 );
                 const { data: legacyData, error: legacyError } = await supabase
                     .from("company_analyses")
@@ -269,7 +295,7 @@ export function RadarProvider({ children }: { children: ReactNode }) {
 
                 if (!legacyError && legacyData && legacyData.length > 0) {
                     console.log(
-                        `✅ Found ${legacyData.length} companies in legacy table.`,
+                        `[Radar] ✅ Found ${legacyData.length} companies in legacy table.`,
                     );
                     allCompanies = legacyData.map((row: any) => ({
                         id: row.id,
@@ -281,36 +307,40 @@ export function RadarProvider({ children }: { children: ReactNode }) {
                         createdAt: row.created_at,
                         updatedAt: row.updated_at,
                         score: row.match_score || 80,
+                        matchReason: row.match_explanation,
                         matchExplanation: row.match_explanation,
                         context: row.match_explanation,
-                        activity: "Voir Analyse", // Default
+                        activity: "Voir Analyse",
                         strategicAnalysis: row.sales_thesis ||
                             row.strategic_analysis,
                         status: "hot",
                         analysisStatus: row.analysis_status || "analyzed",
-                        strategic_category: row.strategic_category ||
+                        strategicCategory: row.strategic_category ||
                             "PERFECT_MATCH",
-                        trigger_events: row.trigger_events || [],
-                        detected_pain_points: row.detected_pain_points || [],
-                        custom_hook: "",
+                        painPoints: row.detected_pain_points || [],
+                        buyingSignals: row.trigger_events || [],
                     } as Company));
                 }
             }
 
             console.log(
-                `Parsed ${allCompanies.length} companies total (Agent V2 + Legacy).`,
+                `[Radar] Parsed ${allCompanies.length} companies total.`,
             );
             return allCompanies;
         },
         enabled: !!currentProject?.id,
     });
 
-    // Real-time subscription for radar_catch_all (Source of Truth)
+    // Real-time subscription for radar_catch_all
+    // FIX 1: isExecuting removed from deps — we use isExecutingRef instead to avoid
+    //        destroying/recreating this channel every time the scan state changes.
+    // FIX 2: event "*" instead of "INSERT" — upsert on existing rows fires UPDATE,
+    //        which was silently missed before.
     useEffect(() => {
         if (!currentProject?.id) return;
 
         console.log(
-            "🔌 Subscribing to radar_catch_all for project:",
+            "[Radar] 🔌 Subscribing to radar_catch_all for project:",
             currentProject.id,
         );
 
@@ -319,123 +349,57 @@ export function RadarProvider({ children }: { children: ReactNode }) {
             .on(
                 "postgres_changes",
                 {
-                    event: "*", // Listen to INSERT/UPDATE
+                    event: "*", // FIX 2: catch INSERT and UPDATE (upsert)
                     schema: "public",
-                    table: "radar_catch_all",
+                    table: "radar_catch_all" as any,
                     filter: `project_id=eq.${currentProject.id}`,
                 },
-                async (payload) => {
+                (payload) => {
                     console.log(
-                        "⚡️ REALTIME EVENT (Radar):",
-                        payload.eventType,
+                        `[Radar] ⚡️ REALTIME ${payload.eventType} on radar_catch_all`,
                     );
-
-                    // 1. UPDATE WATCHDOG
-                    // 1. UPDATE WATCHDOG
                     lastActivityRef.current = Date.now();
 
-                    // 2. PARSE & INJECT DATA DIRECTLY (REACTIVITY)
                     const newRow = payload.new as any;
-                    const raw = newRow.raw_data;
+                    if (!newRow) return;
 
-                    if (raw) {
-                        try {
-                            // Extract Candidates (Same logic as useQuery)
-                            let candidates: any[] = [];
-                            if (
-                                raw.data?.companies &&
-                                Array.isArray(raw.data.companies)
-                            ) {
-                                candidates = raw.data.companies;
-                            } else if (
-                                raw.companies && Array.isArray(raw.companies)
-                            ) {
-                                candidates = raw.companies;
-                            } else if (raw.data && Array.isArray(raw.data)) {
-                                candidates = raw.data;
-                            } else if (Array.isArray(raw)) {
-                                candidates = raw;
-                            }
+                    const newCompany = mapCatchAllRowToCompany(newRow);
 
-                            // Map to Company Interface
-                            const newCompanies: Company[] = candidates.map(
-                                (c: any, index: number) => {
-                                    const name = c.company_name || c.name ||
-                                        c["Company Name"] || "Unknown";
-                                    let url = c.url || c.website || c.URL || "";
-                                    if (url && !url.startsWith("http")) {
-                                        url = `https://${url}`;
-                                    }
-                                    const safeId = `${newRow.id}-${index}`;
+                    if (newCompany) {
+                        console.log(
+                            `[Radar] 🚀 Injecting company: ${newCompany.name}`,
+                        );
 
-                                    return {
-                                        id: safeId,
-                                        name: name,
-                                        website: url,
-                                        domain: url,
-                                        logoUrl: c.logo_url ||
-                                            `https://www.google.com/s2/favicons?domain=${url}&sz=128`,
-                                        createdAt: newRow.created_at,
-                                        updatedAt: newRow.created_at,
-                                        score: c.relevance_score || 85,
-                                        matchExplanation: c.context ||
-                                            c.reason_for_matching ||
-                                            "Identified by Agent",
-                                        context: c.context ||
-                                            c.reason_for_matching ||
-                                            "Identified by Agent",
-                                        activity: c.activity || "N/A",
-                                        strategicAnalysis: c.usage_examples
-                                            ? (Array.isArray(c.usage_examples)
-                                                ? c.usage_examples.join("\n")
-                                                : c.usage_examples)
-                                            : "No specific analysis",
-                                        status: "hot",
-                                        analysisStatus: "analyzed",
-                                        strategicCategory: "PERFECT_MATCH",
-                                        buyingSignals: [],
-                                        painPoints: [],
-                                        tags: [],
-                                        customHook: JSON.stringify(c),
-                                    } as Company;
-                                },
-                            );
-
-                            if (newCompanies.length > 0) {
-                                console.log(
-                                    `🚀 [REALTIME] Injecting ${newCompanies.length} companies into UI!`,
+                        // Inject immediately into the query cache
+                        queryClient.setQueryData(
+                            ["radar-companies", currentProject.id],
+                            (oldData: Company[] | undefined) => {
+                                const existing = oldData || [];
+                                // Replace if already exists (upsert case), else prepend
+                                const filtered = existing.filter(
+                                    (c) => c.id !== newCompany.id,
                                 );
+                                return [newCompany, ...filtered];
+                            },
+                        );
 
-                                // UPDATE CACHE INSTANTLY
-                                queryClient.setQueryData([
-                                    "radar-companies",
-                                    currentProject.id,
-                                ], (oldData: Company[] | undefined) => {
-                                    return [
-                                        ...newCompanies,
-                                        ...(oldData || []),
-                                    ];
-                                });
-
-                                // STOP SCANNING
-                                if (isExecuting) {
-                                    setIsExecuting(false);
-                                    setScanStep("complete");
-                                    setScanProgress(100);
-                                    toast({
-                                        title: "Mission Terminée",
-                                        description:
-                                            `${newCompanies.length} nouvelles opportunités détectées.`,
-                                        className:
-                                            "bg-emerald-500 text-white border-none",
-                                    });
-                                }
+                        // FIX 1: Use ref to read isExecuting — no stale closure
+                        if (isExecutingRef.current) {
+                            setIsExecuting(false);
+                            setScanStep("complete");
+                            setScanProgress(100);
+                            // Clear polling fallback too
+                            if (pollIntervalRef.current) {
+                                clearInterval(pollIntervalRef.current);
+                                pollIntervalRef.current = null;
                             }
-                        } catch (err) {
-                            console.error(
-                                "Error parsing realtime payload:",
-                                err,
-                            );
+                            toast({
+                                title: "✅ Résultats Reçus",
+                                description:
+                                    `Entreprise détectée : ${newCompany.name}`,
+                                className:
+                                    "bg-emerald-500 text-white border-none",
+                            });
                         }
                     }
                 },
@@ -445,7 +409,94 @@ export function RadarProvider({ children }: { children: ReactNode }) {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [currentProject?.id, queryClient, manualResetActive]);
+    }, [currentProject?.id, queryClient, manualResetActive]); // FIX 1: no isExecuting/toast
+
+    // ========================================================================
+    // ⚡️ STATUS SYNC (THE "MAGIC SLATE" CONNECTION)
+    // ========================================================================
+
+    // 1. RECOVER STATE ON MOUNT (Refresh handling)
+    useEffect(() => {
+        const recoverState = async () => {
+            if (!currentProject?.id) return;
+            // Check if a ghost scan is running
+            const { data } = await supabase.from("radar_scans" as any)
+                .select("*")
+                .eq("project_id", currentProject.id)
+                .in("status", ["processing", "queued"])
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (data) {
+                const scan = data as any;
+                console.log("👻 [GHOST RECOVERY] Found active scan:", scan.id);
+                setIsExecuting(true);
+                setScanStep(scan.stage);
+                setScanProgress(scan.progress || 0);
+            }
+        };
+        recoverState();
+    }, [currentProject?.id]);
+
+    // 2. REALTIME PROGRESS SYNC
+    useEffect(() => {
+        if (!currentProject?.id) return;
+        const channel = supabase.channel("radar-scans-sync")
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "radar_scans" as any,
+                    filter: `project_id=eq.${currentProject.id}`,
+                },
+                (payload) => {
+                    const newRow = payload.new as any;
+                    console.log(
+                        "⚡️ [STATUS SYNC] Update:",
+                        newRow.status,
+                        newRow.stage,
+                        newRow.progress,
+                    );
+
+                    if (["processing", "queued"].includes(newRow.status)) {
+                        setIsExecuting(true);
+                        setScanStep(newRow.stage as any);
+                        setScanProgress(newRow.progress || 0);
+                        lastActivityRef.current = Date.now(); // Keep watchdog happy
+                    } else if (newRow.status === "completed") {
+                        setIsExecuting(false);
+                        setScanStep("complete");
+                        setScanProgress(100);
+                        // Trigger refresh of companies list immediately
+                        queryClient.invalidateQueries({
+                            queryKey: ["radar-companies"],
+                        });
+                        toast({
+                            title: "Mission Terminée",
+                            description:
+                                "Analyse complète. Résultats disponibles.",
+                            className: "bg-emerald-500 text-white border-none",
+                        });
+                    } else if (newRow.status === "failed") {
+                        setIsExecuting(false);
+                        setScanStep("error");
+                        toast({
+                            variant: "destructive",
+                            title: "Echec du Scan",
+                            description: newRow.meta?.error ||
+                                "Erreur technique signalée par l'agent.",
+                        });
+                    }
+                },
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [currentProject?.id, queryClient, toast]);
 
     // SILENCE DETECTION (Auto-Complete)
     useEffect(() => {
@@ -489,30 +540,8 @@ export function RadarProvider({ children }: { children: ReactNode }) {
         setSelectedCompany(null);
     }, []);
 
-    // Simulated Progress Logic
-    useEffect(() => {
-        if (!isScanning) return;
-
-        const startTime = Date.now();
-        const interval = setInterval(() => {
-            const elapsed = Date.now() - startTime;
-
-            setScanProgress((prev) => {
-                if (elapsed < 3000) {
-                    setScanStep("analyzing");
-                    return Math.min(15, (elapsed / 3000) * 15); // 0 à 15% en 3s (Analyse)
-                } else if (elapsed < 25000) {
-                    setScanStep("searching");
-                    return Math.min(75, 15 + ((elapsed - 3000) / 22000) * 60); // 15 à 75% (Recherche)
-                } else {
-                    setScanStep("validating"); // "Analyse IA"
-                    return Math.min(85, prev + 0.1);
-                }
-            });
-        }, 100);
-
-        return () => clearInterval(interval);
-    }, [isScanning]);
+    // SIMULATED PROGRESS REMOVED - NOW USING REALTIME STATUS SYNC
+    // The "Ghost in the Machine" is now gone. The UI reflects the database state.
 
     // --- PHASE 1: STRATEGIZE (The Brain) ---
     const analyzeMarket = useCallback(async (forceRefresh = false) => {
@@ -527,7 +556,7 @@ export function RadarProvider({ children }: { children: ReactNode }) {
             // FORCE SESSION REFRESH to avoid 401 errors
             console.log("[Radar] 🔄 Refreshing session before strategize...");
             const { data: { session: freshSession }, error: sessionError } =
-                await supabase.auth.getSession();
+                await supabase.auth.refreshSession();
 
             if (sessionError || !freshSession) {
                 throw new Error(
@@ -613,7 +642,7 @@ export function RadarProvider({ children }: { children: ReactNode }) {
             // FORCE SESSION REFRESH to avoid 401 errors
             console.log("[Radar] 🔄 Refreshing session before execute...");
             const { data: { session: freshSession }, error: sessionError } =
-                await supabase.auth.getSession();
+                await supabase.auth.refreshSession();
 
             if (sessionError || !freshSession) {
                 throw new Error(
@@ -676,8 +705,141 @@ export function RadarProvider({ children }: { children: ReactNode }) {
             // Since API returned 200, the job is "accepted".
             // We DO NOT wait for data here. The Realtime Listener will wake us up.
             console.log("👂 Radar is listening for Realtime updates...");
+
+            // ================================================================
+            // FIX 3: POLLING FALLBACK — every 20s, check db directly
+            // Guards against realtime events being missed (network gap, reconnect)
+            // ================================================================
+            let pollCount = 0;
+            const MAX_POLLS = 45; // 45 × 20s = 15 minutes hard stop
+
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+
+            pollIntervalRef.current = setInterval(async () => {
+                pollCount++;
+                console.log(
+                    `[Radar] ⏱️ Poll #${pollCount} — checking completion...`,
+                );
+
+                // Hard stop after 15 minutes
+                if (pollCount >= MAX_POLLS) {
+                    console.warn(
+                        "[Radar] ⏰ Max polls reached. Force-stopping.",
+                    );
+                    clearInterval(pollIntervalRef.current!);
+                    pollIntervalRef.current = null;
+                    setIsExecuting(false);
+                    setScanStep("complete");
+                    setScanProgress(100);
+                    return;
+                }
+
+                try {
+                    // ── ACTIVE CHECK: Call check-firecrawl to poll Firecrawl & insert results ──
+                    // Runs every other tick (~40s) — the key relay after execute-radar is killed
+                    if (pollCount % 2 === 0) {
+                        console.log("[Radar] 🔍 Calling check-firecrawl...");
+                        try {
+                            const { data: checkResult } = await supabase
+                                .functions.invoke(
+                                    "check-firecrawl",
+                                    { body: { projectId: currentProject!.id } },
+                                );
+                            if (
+                                checkResult?.done && checkResult?.inserted > 0
+                            ) {
+                                console.log(
+                                    `[Radar] ✅ check-firecrawl inserted ${checkResult.inserted} companies!`,
+                                );
+                                clearInterval(pollIntervalRef.current!);
+                                pollIntervalRef.current = null;
+                                await refetch();
+                                setIsExecuting(false);
+                                setScanStep("complete");
+                                setScanProgress(100);
+                                toast({
+                                    title: "✅ Résultats Radar",
+                                    description:
+                                        `${checkResult.inserted} entreprise(s) trouvée(s).`,
+                                    className:
+                                        "bg-emerald-500 text-white border-none",
+                                });
+                                return;
+                            }
+                        } catch (checkErr) {
+                            console.warn(
+                                "[Radar] check-firecrawl error (non-blocking):",
+                                checkErr,
+                            );
+                        }
+                    }
+
+                    // 1. Check if radar_scans shows completion
+                    const { data: scan } = await supabase
+                        .from("radar_scans" as any)
+                        .select("status")
+                        .eq("project_id", currentProject!.id)
+                        .eq("status", "completed")
+                        .order("updated_at", { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (scan) {
+                        console.log(
+                            "[Radar] ✅ Poll detected completed scan. Stopping.",
+                        );
+                        clearInterval(pollIntervalRef.current!);
+                        pollIntervalRef.current = null;
+                        await refetch();
+                        setIsExecuting(false);
+                        setScanStep("complete");
+                        setScanProgress(100);
+                        toast({
+                            title: "✅ Scan Terminé",
+                            description:
+                                "Résultats chargés depuis la base de données.",
+                            className: "bg-emerald-500 text-white border-none",
+                        });
+                        return;
+                    }
+
+                    // 2. Check if new companies appeared in radar_catch_all
+                    const { data: catchAllRows } = await supabase
+                        .from("radar_catch_all" as any)
+                        .select("id")
+                        .eq("project_id", currentProject!.id)
+                        .limit(1);
+
+                    if (
+                        catchAllRows && catchAllRows.length > 0 &&
+                        isExecutingRef.current
+                    ) {
+                        console.log(
+                            "[Radar] ✅ Poll found data in radar_catch_all. Refreshing.",
+                        );
+                        await refetch();
+                        clearInterval(pollIntervalRef.current!);
+                        pollIntervalRef.current = null;
+                        setIsExecuting(false);
+                        setScanStep("complete");
+                        setScanProgress(100);
+                        toast({
+                            title: "✅ Données Récupérées",
+                            description:
+                                "Les résultats sont maintenant disponibles.",
+                            className: "bg-emerald-500 text-white border-none",
+                        });
+                    }
+                } catch (pollErr) {
+                    console.warn("[Radar] Poll error (non-blocking):", pollErr);
+                }
+            }, 20000); // 20 seconds
         } catch (err: any) {
             clearInterval(progressInterval);
+            if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+            }
             console.error("[Radar] Execution Error:", err);
             setScanStep("error");
             setIsExecuting(false);
@@ -1251,6 +1413,7 @@ export function RadarProvider({ children }: { children: ReactNode }) {
         resetRadar,
         forceReloadRadar,
         recalibrateRadar,
+        cancelScan,
 
         // Utils
         refetch,

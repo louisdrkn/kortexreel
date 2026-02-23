@@ -35,6 +35,7 @@ interface StrategicIdentity {
   ideal_prospect_profile?: string;
   exclusion_criteria?: string;
   observable_symptoms?: string[];
+  extracted_case_studies?: string[]; // NEW: For finding clients in PDFs
 }
 
 interface StrategicPillar {
@@ -160,6 +161,10 @@ RÈGLE : Combine obligatoirement ces trois éléments :
 **4. CRITÈRES D'EXCLUSION (exclusion_criteria)**
 Définis qui ne peut PAS être client (basé sur des contraintes techniques ou budgétaires trouvées dans les textes).
 
+**5. ÉTUDES DE CAS & CLIENTS CITÉS (extracted_case_studies)**
+Liste TOUS les noms d'entreprises, marques ou clients cités dans les documents comme étant des références, des cas clients ou des partenaires existants.
+C'est CRITIQUE pour trouver des clones de ces clients.
+
 === OUTPUT JSON ===
 {
   "unique_value_proposition": "La phrase construite selon la syntaxe imposée",
@@ -167,14 +172,14 @@ Définis qui ne peut PAS être client (basé sur des contraintes techniques ou b
   "ideal_prospect_profile": "Définition précise du décideur cible",
   "exclusion_criteria": "Typologie d'entreprises à ne pas contacter",
   "observable_symptoms": ["Signal externe visible 1", "Signal externe visible 2"],
+  "extracted_case_studies": ["Client A", "Client B", "Partenaire C"],
   "verification_citation": "Une citation exacte du PDF qui justifie ton analyse",
   "consciousness_summary": [],
   "strategic_pillars": []
 }
 `;
 
-const GLOBAL_KILL_SWITCH =
-  " -site:linkedin.com -site:indeed.fr -site:greenhouse.io -site:lever.co -site:wttj.co -site:youtube.com -site:facebook.com -site:twitter.com -site:instagram.com -site:tiktok.com -emploi -recrutement -stage -alternance -candidature -blog -article -definition -tuto -formation -classement -top10 -annuaire -listing -comparatif -wiki -forum";
+const GLOBAL_KILL_SWITCH = "";
 
 const STRATEGY_PROMPT = `
 [SYSTEM: KORTEX COMMANDER - "SINGLE REQUEST AGENT PROTOCOL" ACTIVATED]
@@ -192,31 +197,35 @@ SOURCES (PAST CLIENTS):
 **STEP 0: SELECT THE "SOURCE OF TRUTH" (3 LEADERS)**
 Analyze the past clients. Pick the TOP 3 most relevant "Leaders" that represent the Perfect Target.
 
-**STEP 1: GENERATE THE MASTER PROMPT (1 PER LEADER)**
-For EACH selected Leader, write A SINGLE, RICH INSTRUCTION in English using "OR" logic to cover all angles at once.
 
-**TEMPLATE:**
-"Find at least 35 companies in [Region] that are EITHER direct competitors of [Leader], OR operational peers sharing similar industrial facilities (like [Specific Asset]), OR businesses with matching needs for [Solution]. They MUST be active commercial entities. Priority to companies resembling [Leader] in structure and size. EXCLUDE: directories, news, finance, and [Leader] itself. You MUST navigate to the 2nd and 3rd pages of search results to meet the quota of 35. Do not stop until you have gathered enough candidates. If you cannot find 35 perfect matches after searching, return as many as you found (e.g., 28 is better than 0). Do NOT fail the task. Return the JSON list with whatever you have."
+**STEP 1: GENERATE THE MASTER PROMPT (1 PER LEADER)**
+For EACH selected Leader, write A SINGLE, RICH INSTRUCTION in FRENCH (Français) using "OR" logic to cover all angles at once.
+Focus on the *types* of companies to find (Competitors, Peers, Ecosystem Partners).
+Do NOT include instructions about "navigation", "pagination", or "quantity" (e.g., "Find 35 companies"). The Agent handles that automatically.
+Your job is purely to describe the **Target Persona**.
+
+**TEMPLATE (Semantic Only - IN FRENCH):**
+"Trouver des entreprises en [Région] qui sont SOIT des concurrents directs de [Leader], SOIT des pairs opérationnels partageant des installations industrielles similaires (comme [Atout Spécifique]), SOIT des entreprises ayant des besoins similaires pour [Solution]. Elles DOIVENT être des entités commerciales actives. Priorité aux entreprises ressemblant à [Leader] en structure et taille."
 
 **STEP 2: RULES OF ENGAGEMENT**
-*   **LANGUAGE**: ENGLISH ONLY.
+*   **LANGUAGE**: FRENCH ONLY (FRANÇAIS).
 *   **LOGIC**: Use "OR" to combine the [Direct], [Technical], and [Mirror] vectors.
-*   **QUANTITY**: Ask for "at least 35 companies" in each brief.
+*   **NO MICRO-MANAGEMENT**: Do not tell the agent *how* to search (e.g. "go to page 2"), just tell it *what* to find.
 
 === OUTPUT JSON ===
 {
-  "value_proposition": "Focus on high-value operational targets",
+  "value_proposition": "Concentration sur des cibles opérationnelles à haute valeur",
   "identified_clusters": [
-    { "name": "Master Strategy", "description": "Unified approach per leader", "representative_clients": ["Sanofi"] }
+    { "name": "Master Strategy", "description": "Approche unifiée par leader", "representative_clients": ["Sanofi"] }
   ],
   "queries": [
-    // Sanofi Master Prompt
-    "Find at least 35 companies in Western Europe that are EITHER direct pharmaceutical competitors of Sanofi, OR CDMOs with sterile injectable manufacturing lines, OR large industrial sites requiring strict HVAC compliance. Priority to factories similar to Sanofi's production sites. EXCLUDE: Sanofi, directories, recruitment agencies, and news sites. You MUST navigate to the 2nd and 3rd pages of search results to meet the quota of 35. Do not stop until you have gathered enough candidates. If you cannot find 35 perfect matches after searching, return as many as you found (e.g., 28 is better than 0). Do NOT fail the task. Return the JSON list with whatever you have.",
+    // Sanofi Master Prompt (French)
+    "Trouver des entreprises en Europe de l'Ouest qui sont SOIT des concurrents pharmaceutiques directs de Sanofi, SOIT des CDMO avec des lignes de fabrication d'injectables stériles, SOIT de grands sites industriels nécessitant une conformité CVC stricte. Priorité aux usines similaires aux sites de production de Sanofi.",
     
-    // SNCF Master Prompt
-    "Find at least 35 companies in France that are EITHER railway maintenance providers competing with SNCF, OR heavy industries with rolling stock MRO workshops, OR public transport operators creating predictive maintenance tenders. EXCLUDE: SNCF, ticket sales platforms, and government blogs. You MUST navigate to the 2nd and 3rd pages of search results to meet the quota of 35. Do not stop until you have gathered enough candidates. If you cannot find 35 perfect matches after searching, return as many as you found (e.g., 28 is better than 0). Do NOT fail the task. Return the JSON list with whatever you have."
+    // SNCF Master Prompt (French)
+    "Trouver des entreprises en France qui sont SOIT des prestataires de maintenance ferroviaire concurrents de la SNCF, SOIT des industries lourdes avec des ateliers MRO de matériel roulant, SOIT des opérateurs de transports publics lançant des appels d'offres de maintenance prédictive."
   ],
-  "synthesis_proof": "I selected 3 Leaders. I generated 1 concatenated Master Prompt for each."
+  "synthesis_proof": "J'ai sélectionné 3 Leaders. J'ai généré 1 Master Prompt concaténé pour chacun."
 }
 `;
 
@@ -573,10 +582,14 @@ serve(async (req: Request): Promise<Response> => {
     }
     // --- LEAKAGE DIAGNOSTICS END ---
 
-    // BLACK HOLE CHECK
-    if (!docsText || docsText.trim().length === 0) {
+    // BLACK HOLE CHECK (Relaxe: Allow Pitch/Website if Docs are missing)
+    const hasDocuments = docsText && docsText.trim().length > 0;
+    const hasPitch = pitch && pitch.trim().length > 0;
+    const hasWebsite = websiteContent && websiteContent.trim().length > 0;
+
+    if (!hasDocuments && !hasPitch && !hasWebsite) {
       throw new Error(
-        "ABORT: No documents found. Please upload PDFs to Knowledge Base.",
+        "ABORT: No context found (Docs, Pitch, or Website). Please upload PDFs or complete Agency DNA.",
       );
     }
 
@@ -662,6 +675,17 @@ serve(async (req: Request): Promise<Response> => {
     const pastClientsList = agencyDNA.trackRecord?.pastClients?.map((c) =>
       c.name
     ) || [];
+
+    // AUTO-INJECT: Clients found in PDFs
+    if (
+      identity?.extracted_case_studies &&
+      Array.isArray(identity.extracted_case_studies)
+    ) {
+      console.log(
+        `[STRATEGIZE] 💉 Injecting ${identity.extracted_case_studies.length} clients found in PDFs`,
+      );
+      pastClientsList.push(...identity.extracted_case_studies);
+    }
     const pastClientsStr = pastClientsList.length > 0
       ? pastClientsList.join(", ")
       : "None provided (Use broad industry knowledge)";

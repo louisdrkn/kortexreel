@@ -79,13 +79,23 @@ export function useCompanyDocuments() {
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           "text/plain",
           "text/markdown",
+          "text/csv", // CSV
+          "application/vnd.ms-excel", // Excel (Legacy)
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // Excel (Modern)
         ];
 
-        if (!allowedTypes.includes(file.type) && !file.name.endsWith(".md")) {
+        // Check extension manually for CSV/Excel since MIME types can vary
+        const isExcelOrCsv = file.name.endsWith(".csv") ||
+          file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
+
+        if (
+          !allowedTypes.includes(file.type) && !file.name.endsWith(".md") &&
+          !isExcelOrCsv
+        ) {
           throw new Error(
             `Type de fichier non supporté: ${
               file.type || file.name.split(".").pop()
-            }. Formats acceptés: PDF, PPTX, DOCX, TXT, MD`,
+            }. Formats acceptés: PDF, PPTX, DOCX, TXT, MD, CSV, XLSX`,
           );
         }
 
@@ -108,7 +118,7 @@ export function useCompanyDocuments() {
           );
           if (uploadError.message.includes("mime type")) {
             throw new Error(
-              `Type de fichier non autorisé. Formats acceptés: PDF, PPTX, DOCX, TXT`,
+              `Type de fichier non autorisé. Formats acceptés: PDF, PPTX, DOCX, TXT, CSV, XLSX`,
             );
           }
           if (

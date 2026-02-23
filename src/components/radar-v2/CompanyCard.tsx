@@ -483,8 +483,9 @@ export function CompanyCard(
 
       {/* Content */}
       <div className="p-4 space-y-3">
-        {/* DISCOVERED STATE PROMPT */}
-        {company.analysisStatus === "discovered" && !isAnalyzing && (
+        {/* DISCOVERED STATE PROMPT — only show if no content to display */}
+        {company.analysisStatus === "discovered" && !isAnalyzing &&
+          !company.matchReason && !company.industry && (
           <div className="flex flex-col items-center justify-center py-4 space-y-3 border-2 border-dashed border-slate-700/50 rounded-lg bg-slate-800/20">
             <Brain className="h-8 w-8 text-slate-600 animate-pulse" />
             <div className="text-center">

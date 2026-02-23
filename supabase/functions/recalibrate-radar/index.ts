@@ -112,6 +112,7 @@ interface Company {
   buying_signals?: string[];
   analysis_status?: string;
   company_url?: string;
+  match_explanation?: string;
 }
 
 interface LeadInteraction {
@@ -200,7 +201,7 @@ ${agencyContext}
 
 ${
       validatedCompanies.length > 0
-        ? `ENTREPRISES VALIDÉES (bonnes pistes):
+        ? `ENTREPRISES VALIDÉES (bonnes pistes - Historique + Live Feed):
 ${
           validatedCompanies.map((c) =>
             `- ${c.company_name}: ${c.industry || "N/A"}, ${
@@ -213,10 +214,12 @@ ${
 
 ${
       rejectedCompanies.length > 0
-        ? `ENTREPRISES REJETÉES (mauvaises pistes - À ÉVITER):
+        ? `ENTREPRISES REJETÉES (mauvaises pistes - À ÉVITER ABSOLUMENT - Historique + Live Feed):
 ${
           rejectedCompanies.map((c) =>
-            `- ${c.company_name}: ${c.industry || "N/A"}`
+            `- ${c.company_name}: ${c.industry || "N/A"} (${
+              c.match_explanation || "Rejeté par l'utilisateur"
+            })`
           ).join("\n")
         }`
         : ""
@@ -426,13 +429,14 @@ Deno.serve(async (req) => {
         0) / totalCompanies
       : 50;
 
-    // STEP 2: Analyze interactions
+    // STEP 2: Analyze interactions (HISTORY + LIVE FEED)
     steps.push({
       step: "interactions",
-      message: "Lecture de vos interactions...",
+      message: "Analyse hybride (Historique + Live Feed)...",
       progress: 20,
     });
 
+    // 2A. HISTORY: Fetch verified interactions
     const { data: interactions } = await supabase
       .from("lead_interactions")
       .select(
@@ -447,6 +451,7 @@ Deno.serve(async (req) => {
     const rejectedCompanies: Company[] = [];
     const viewedCompanies: Company[] = [];
 
+    // Process History
     (interactions || []).forEach((interaction: LeadInteraction) => {
       const company = interaction.company_analyses;
       if (!company) return;
@@ -465,6 +470,71 @@ Deno.serve(async (req) => {
         viewedCompanies.push(company);
       }
     });
+
+    // 2B. LIVE FEED: Fetch immediate reactions (radar_catch_all)
+    // We look for items marked as 'trash', 'rejected', 'qualified', 'shortlisted'
+    // directly in the raw feed.
+    const { data: liveFeedActions } = await supabase
+      .from("radar_catch_all")
+      .select("raw_data, status")
+      .eq("project_id", projectId)
+      .in("status", ["trash", "rejected", "qualified", "shortlisted"])
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    let liveFeedRejectedCount = 0;
+    let liveFeedValidatedCount = 0;
+
+    if (liveFeedActions && liveFeedActions.length > 0) {
+      console.log(
+        `[RECALIBRATE] Found ${liveFeedActions.length} actions in Live Feed.`,
+      );
+
+      liveFeedActions.forEach((item: any) => {
+        const raw = item.raw_data;
+        // Normalize raw data to Company interface
+        // raw_data structures vary, we try to extract common fields
+        let companyData: any = {};
+
+        // Check if it's the new 1-row-per-company format
+        if (
+          raw.companies && Array.isArray(raw.companies) &&
+          raw.companies.length > 0
+        ) {
+          companyData = raw.companies[0];
+        } else {
+          // Fallback for older format or direct object
+          companyData = raw;
+        }
+
+        const normalizedCompany: Company = {
+          company_name: companyData.company_name || companyData.name ||
+            "Unknown",
+          industry: companyData.activity || companyData.industry || "N/A",
+          location: companyData.location || "N/A",
+          match_score: 50, // Default for raw feed
+          company_url: companyData.url || companyData.website,
+        };
+
+        // Determine if Positive or Negative based on STATUS column
+        const status = item.status; // 'trash', 'rejected', 'qualified', 'shortlisted'
+
+        if (status === "trash" || status === "rejected") {
+          // Enrich with reason if available in raw_data
+          (normalizedCompany as any).match_explanation =
+            "Rejeté depuis le Live Feed (Trash)";
+          rejectedCompanies.push(normalizedCompany);
+          liveFeedRejectedCount++;
+        } else if (status === "qualified" || status === "shortlisted") {
+          validatedCompanies.push(normalizedCompany);
+          liveFeedValidatedCount++;
+        }
+      });
+
+      console.log(
+        `[RECALIBRATE] Integrated Live Feed: ${liveFeedValidatedCount} validated, ${liveFeedRejectedCount} rejected.`,
+      );
+    }
 
     // STEP 3: Determine mode
     steps.push({
@@ -550,7 +620,7 @@ Deno.serve(async (req) => {
         .from("project_data")
         .select("data")
         .eq("project_id", projectId)
-        .in("data_type", ["agency_dna", "agency_dna", "target_criteria"])
+        .in("data_type", ["agency_dna", "target_criteria"])
         .limit(2);
 
       const agencyContext = projectData?.map((d) =>

@@ -2,12 +2,6 @@
 // IMPORTS STANDARDS (ALIGNED WITH STRATEGIZE-RADAR)
 // ============================================================================
 
-declare global {
-  const EdgeRuntime: {
-    waitUntil(promise: Promise<unknown>): void;
-  };
-}
-
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7";
 import {
   GoogleGenerativeAI,
@@ -108,15 +102,32 @@ interface AgencyDNA {
   };
 }
 
+interface RawCandidate {
+  url?: string;
+  website?: string;
+  name?: string;
+  company_name?: string;
+  description?: string;
+  activity?: string;
+  reason_for_selection?: string;
+  match_reason?: string;
+  context?: string;
+  relevance_reason?: string; // New field
+  logo_url?: string; // New field
+  status?: "new" | "analyzed" | "pending" | "failed"; // New field
+}
+
 interface Candidate {
   url: string;
   source_query: string;
   company_name: string;
   logo_url: string;
-  status: "pending" | "analyzed" | "failed";
+  status: "new" | "pending" | "analyzed" | "failed";
   match_reason?: string; // NEW: Agent Context
   activity?: string; // NEW: Agent Context
   is_agent_verified?: boolean; // NEW: VIP Flag
+  relevance_reason?: string; // Raw Firecrawl Field
+  reason_for_selection?: string; // Raw Firecrawl Field
 }
 
 interface StrategicIdentity {
@@ -696,31 +707,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // ========================================================================
     // BACKGROUND TASK WRAPPER
     // ========================================================================
+    // HELPER: Universal System Logger (Long Term Memory)
+    const logToDB = async (title: string, content: string) => {
+      const isError = title.includes("FAIL") || title.includes("ERROR") ||
+        title.includes("CRITICAL");
+      const status = isError ? "ERROR" : "INFO";
+      console.log(`[SYSTEM_LOG] [${status}] ${title}`);
+
+      // Write to system_logs
+      try {
+        await supabase.from("system_logs").insert({
+          project_id: projectId,
+          function_name: "execute-radar",
+          step_name: title,
+          status: status,
+          details: content ? content.substring(0, 10000) : "No details",
+          created_at: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn("[SYSTEM_LOG] Failed to write log:", e);
+      }
+    };
+
     const backgroundTask = async () => {
       let userId: string | undefined;
-      const rawCandidates: Candidate[] = []; // Moved to top-level scope to fix visibility issues
-
-      // HELPER: Universal System Logger (Long Term Memory)
-      const logToDB = async (title: string, content: string) => {
-        const isError = title.includes("FAIL") || title.includes("ERROR") ||
-          title.includes("CRITICAL");
-        const status = isError ? "ERROR" : "INFO";
-        console.log(`[SYSTEM_LOG] [${status}] ${title}`);
-
-        // Write to system_logs
-        try {
-          await supabase.from("system_logs").insert({
-            project_id: projectId,
-            function_name: "execute-radar",
-            step_name: title,
-            status: status,
-            details: content ? content.substring(0, 10000) : "No details",
-            created_at: new Date().toISOString(),
-          });
-        } catch (e) {
-          console.warn("[SYSTEM_LOG] Failed to write log:", e);
-        }
-      };
+      let scanId: string | undefined;
+      const allScanCandidates: Candidate[] = []; // Moved to top-level scope to fix visibility issues
 
       try {
         console.log(`[BACKGROUND] 🚀 Started for Project: ${projectId}`);
@@ -745,6 +757,77 @@ Deno.serve(async (req: Request): Promise<Response> => {
         userId = projectOwner.user_id;
         console.log(`[AUTH] Identity Secured: ${userId}`);
 
+        // ====================================================================
+        // 1.5 STATUS SYNC INITIALIZATION (The "Magic Slate")
+        // ====================================================================
+
+        try {
+          const { data: scanData, error: scanErr } = await supabase
+            .from("radar_scans")
+            .insert({
+              project_id: projectId,
+              status: "processing",
+              stage: "starting",
+              progress: 0,
+              meta: { approved_queries },
+            })
+            .select("id")
+            .single();
+
+          if (scanData) {
+            scanId = scanData.id;
+            console.log(`[SYNC] Scan Record Created: ${scanId}`);
+
+            // 🧹 PURGE STALE DATA: Delete old radar_catch_all entries for this project
+            // so the frontend always sees only results from the current scan.
+            const { error: purgeErr } = await supabase
+              .from("radar_catch_all")
+              .delete()
+              .eq("project_id", projectId);
+            if (purgeErr) {
+              console.warn(
+                "[SYNC] Could not purge old radar_catch_all data:",
+                purgeErr.message,
+              );
+            } else {
+              console.log(
+                "[SYNC] 🧹 Old radar_catch_all data purged for project.",
+              );
+            }
+          }
+          if (scanErr) {
+            console.error("[SYNC] Failed to create scan record:", scanErr);
+          }
+        } catch (e) {
+          console.error("[SYNC] Error creating scan record:", e);
+        }
+
+        const updateScanStatus = async (
+          stage: string,
+          progress?: number,
+          metaUpdates?: any,
+        ) => {
+          if (!scanId) return;
+          try {
+            const updatePayload: any = {
+              stage,
+              updated_at: new Date().toISOString(),
+            };
+            if (progress !== undefined) updatePayload.progress = progress;
+            if (metaUpdates) {
+              if (metaUpdates.firecrawl_job_id) {
+                updatePayload.firecrawl_job_id = metaUpdates.firecrawl_job_id;
+              }
+            }
+            await supabase.from("radar_scans").update(updatePayload).eq(
+              "id",
+              scanId,
+            );
+          } catch (e) {
+            console.warn("[SYNC] Update failed:", e);
+          }
+        };
+
         // 2. FETCH PROJECT DATA
         await logToDB("STEP_1_IDENTITY", "Fetching Strategic Identity...");
         const { data: identityData } = await supabase.from(
@@ -765,24 +848,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
         const targetCriteria = (projectData?.find((d: ProjectDataRow) =>
           d.data_type === "target_criteria"
         )?.data as unknown as TargetCriteria) || {};
-        const pastClientsList = agencyDNA.trackRecord?.pastClients || [];
 
-        // DEDUPLICATION
         await logToDB(
           "STEP_3_DEDUP",
           "Fetching Existing URLs for Deduplication...",
         );
-        const { data: existingRows } = await supabase.from("company_analyses")
-          .select("company_url").eq("project_id", projectId);
-        const existingUrls = new Set(
-          existingRows?.map((r) =>
-            normalizeUrlForDedup(r.company_url)
-          ),
-        );
+        // DEDUPLICATION DISABLED BY USER REQUEST
+        // const { data: existingRows } = await supabase.from("company_analyses")
+        //   .select("company_url").eq("project_id", projectId);
+        // const existingUrls = new Set(
+        //   existingRows?.map((r) =>
+        //     normalizeUrlForDedup(r.company_url)
+        //   ),
+        // );
 
         // SEARCH & COLLECT (AGENT-TO-AGENT MODE)
-        // rawCandidates definition moved to top of function
-        const BATCH_SIZE_SEARCH = 2; // Reduce parallelism for Agents (expensive)
+        // allScanCandidates definition moved to top of function
+        const _BATCH_SIZE_SEARCH = 2; // Reduce parallelism for Agents (expensive)
 
         await logToDB(
           "STEP_4_PRE_LOOP",
@@ -796,48 +878,60 @@ Deno.serve(async (req: Request): Promise<Response> => {
         }
 
         // SERIAL EXECUTION (SAFER & CLEANER)
+        await updateScanStatus("searching", 5);
         for (const missionBrief of approved_queries) {
-          if (controller.signal.aborted) break;
+          if (controller.signal.aborted) {
+            break;
+          }
           console.log(
             `[AGENT] Dispatching Mission: ${missionBrief.substring(0, 50)}...`,
           );
 
           try {
-            // NEW: DYNAMIC VARIABLES
-            const mission_instruction = missionBrief; // missionBrief is a full instruction from Strategizer
-            const past_clients_list = pastClientsList.length > 0
-              ? pastClientsList.map((c) =>
-                `- ${c.name} (${c.description || "N/A"})`
-              ).join("\n")
-              : "Aucun historique disponible pour le moment.";
+            // NEW: DYNAMIC VARIABLES FOR UNIVERSAL PROMPT (STRICT MODE)
+            // const target_quantity = "20"; // REMOVED (Implicit in Agent V2)
+            const target_location = targetCriteria.geography?.join(", ") ||
+              "Global";
+            // const target_size = ... // REMOVED (Agent V2 handles this)
+            const target_industry = targetCriteria.industries?.join(", ") ||
+              "B2B Generaliste";
+
+            const project_solution_description = agencyDNA.pitch ||
+              "Solutions B2B pour la croissance.";
+
+            // PRIORITY: Use Identity Pain Point if available, else fall back to Mission Brief
+            const target_pain_point = identity?.core_pain_points?.[0] ||
+              missionBrief || "Inefficacité opérationnelle";
+
+            // OPTIMIZED VARIABLES
+            const project_name = agencyDNA.companyName || "Notre Agence";
+            const past_clients = agencyDNA.trackRecord?.pastClients?.map((c) =>
+              c.name
+            ).join(
+              ", ",
+            ) || "Aucun client de référence fourni";
+
+            // ENFORCED NAMING CONVENTION FOR DASHBOARD VISIBILITY
+            const job_title =
+              `[${project_name.toUpperCase()}] - [${target_industry}] - [${target_location}]`;
 
             const enhancedPrompt = `
-[RÔLE]
-Tu es le Moteur d'Intelligence Artificielle de Kortex, un expert en stratégie de croissance B2B.
+${job_title}
 
-[MISSION PRIORITAIRE]
-${mission_instruction}
+[IDENTITÉ]
+Tu agis pour le compte de l'agence "${project_name}".
+Notre métier : "${project_solution_description}".
+[TA MISSION] Trouve des entreprises similaires à nos clients existants : [${past_clients}].
 
-[MÉMOIRE & APPRENTISSAGE (DO NOT DUPLICATE)] Voici les clients existants ou déjà traités (NE PAS LES RESSORTIR, mais analyse leur profil pour trouver des "Lookalikes" similaires) : 
-[ ${past_clients_list} ]
+[PROFIL CIBLE]
 
-[INSTRUCTIONS DE RECHERCHE SUPPLÉMENTAIRES]
+Zone : ${target_location}
 
-OBJECTIF GLOBAL : Trouve 10 nouvelles entreprises pertinentes.
+Secteur : ${target_industry}
 
-ANALYSE : Pour chaque entreprise, demande-toi : "Est-ce un bon fit par rapport à la Mission ?".
+Le Signe à détecter : "${target_pain_point}" (Cherche ce problème spécifique).
 
-FILTRAGE :
-IGNORE les annuaires, les offres d'emploi, et les articles de presse (déjà géré par le kill switch).
-IGNORE les entreprises déjà listées dans la section [MÉMOIRE].
-Cherche le site web officiel de l'entreprise.
-
-[CONTRAINTES DE LANGUE & FORMAT]
-FORMAT DE SORTIE : JSON strict.
-CLÉS JSON (TECHNIQUE) : Garde impérativement les clés en ANGLAIS pour le code ('company_name', 'url', 'activity', 'relevance_score', 'usage_examples').
-VALEURS (CONTENU) : Tout le texte visible doit être en FRANÇAIS professionnel et vendeur.
-
-[STRUCTURE JSON ATTENDUE] { "companies": [ { "company_name": "Nom Exact", "url": "https://site-officiel.com", "activity": "Description courte et percutante de leur métier.", "relevance_score": 85, // Note de 0 à 100 selon le fit avec la cible "context": "Pourquoi c'est une cible parfaite (ex: Croissance détectée, Technologie compatible...)", "usage_examples": "1. Idée concrète d'automatisation ou d'approche..." } ] } 
+[FORMAT JSON STRICT] { "companies": [ { "company_name": "Nom", "url": "https://...", "relevance_reason": "Pourquoi cette entreprise ressemble à nos clients passés ou a le problème cité ?" } ] }
             `;
 
             await logToDB(
@@ -855,7 +949,6 @@ VALEURS (CONTENU) : Tout le texte visible doit être en FRANÇAIS professionnel 
                 },
                 body: JSON.stringify({
                   prompt: enhancedPrompt,
-                  // schema: agentSchema, // REMOVED
                 }),
                 signal: controller.signal,
               },
@@ -876,457 +969,265 @@ VALEURS (CONTENU) : Tout le texte visible doit être en FRANÇAIS professionnel 
             }
 
             console.log(
-              `[AGENT] Job Started: ${jobId}. Polling for up to 1500s...`,
+              `[AGENT] ✅ Job Launched: ${jobId}. Polling mode active.`,
             );
-            await logToDB(`FIRECRAWL_STARTED`, `Job ID: ${jobId}`);
+            await logToDB(
+              `FIRECRAWL_STARTED`,
+              `Job ID: ${jobId} | Mode: polling`,
+            );
 
-            // B. ASYNC POLLING LOOP
-            let pollAttempts = 0;
-            const MAX_RETRIES = 120; // 120 * 5s = 600s (10 minutes)
-
-            while (pollAttempts < MAX_RETRIES) {
-              await new Promise((r) => setTimeout(r, 5000)); // 5s Patient Polling
-              if (controller.signal.aborted) break;
-
-              pollAttempts++;
-              if (pollAttempts === 1) {
-                await logToDB(
-                  `POLL_START`,
-                  `Starting polling loop for Job ${jobId}`,
-                );
-              }
-
-              // HEARTBEAT (Visible Logs)
-              console.log(
-                `⏳ [Polling] L'Agent réfléchit depuis ${
-                  pollAttempts * 5
-                } secondes... (Tentative ${pollAttempts}/${MAX_RETRIES})`,
-              );
-
-              // HEARTBEAT (Every 4 attempts = 20s)
-              if (pollAttempts % 4 === 0) {
-                console.log(
-                  `[AGENT] Heartbeat... (${pollAttempts}/${MAX_RETRIES})`,
-                );
-                await supabase.from("company_analyses").upsert({
+            // CRITICAL: Persist jobId to DB immediately so check-firecrawl can
+            // pick it up even if this Edge Function gets killed by Supabase timeout.
+            if (scanId) {
+              await supabase.from("radar_scans").update({
+                firecrawl_job_id: jobId,
+                stage: "searching",
+                progress: 10,
+                updated_at: new Date().toISOString(),
+              }).eq("id", scanId);
+            } else {
+              // No scanId (insert failed earlier) — upsert a fresh row
+              const { data: newScan } = await supabase.from("radar_scans")
+                .upsert({
                   project_id: projectId,
-                  company_url: "http://system.heartbeat",
-                  company_name: "SYSTEM_HEARTBEAT",
-                  analysis_status: "processing",
-                  match_explanation:
-                    `Scanning... Attempt ${pollAttempts}/${MAX_RETRIES}`,
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: "project_id, company_url" });
+                  firecrawl_job_id: jobId,
+                  status: "processing",
+                  stage: "searching",
+                  progress: 10,
+                  meta: { mission: missionBrief.substring(0, 100) },
+                }, { onConflict: "project_id", ignoreDuplicates: false })
+                .select("id")
+                .maybeSingle();
+              if (newScan?.id) {
+                scanId = newScan.id;
               }
+            }
+            console.log(
+              `[SYNC] firecrawl_job_id ${jobId} stored in radar_scans.`,
+            );
 
-              const pollController = new AbortController();
-              const pollTimeout = setTimeout(
-                () => pollController.abort(),
-                10000,
-              ); // 10s Timeout for poll request
+            // ✅ POLLING MODE: Poll Firecrawl every 15s until completed, then insert data directly.
+            // NOTE: Firecrawl v2 /agent does NOT support webhookUrl — polling is the only option.
+            const POLL_INTERVAL_MS = 15000;
+            const POLL_MAX_MS = 10 * 60 * 1000; // 10 min max
+            const pollStart = Date.now();
+            let pollCount = 0;
+            let jobDone = false;
 
-              let checkResp;
-              try {
-                checkResp = await fetch(
-                  `https://api.firecrawl.dev/v2/agent/${jobId}`,
-                  {
-                    headers: { "Authorization": `Bearer ${firecrawlKey}` },
-                    signal: pollController.signal,
-                  },
-                );
-              } catch (fetchErr) {
-                clearTimeout(pollTimeout);
-                console.warn(`[AGENT] Poll Network Error: ${fetchErr}`);
-                await logToDB(`POLL_NET_ERROR`, String(fetchErr));
-                continue;
-              } finally {
-                clearTimeout(pollTimeout);
-              }
-
-              if (!checkResp.ok) {
-                console.warn(
-                  `[AGENT] Poll failed (${checkResp.status}). Retrying...`,
-                );
-                // pollAttempts++;
-                continue;
-              }
-
-              const statusData = await checkResp.json();
-              const currentStatus = statusData.status;
-
-              console.log(
-                `[AGENT] Job ${jobId} Status: ${currentStatus} (Attempt ${
-                  pollAttempts + 1
-                }/${MAX_RETRIES})`,
-              );
-
-              if (currentStatus === "completed") {
-                // 0. SAFETY NET: DUMP RAW DATA TO CATCH-ALL TABLE
-                // This ensures we have the data even if parsing or valid insertion fails later.
-                try {
-                  await supabase.from("radar_catch_all").insert({
-                    project_id: projectId,
-                    raw_data: statusData,
-                    error_log: "Raw Dump from Agent",
-                  });
-                  console.log(
-                    "[SAFETY_NET] Raw data dumped to radar_catch_all",
-                  );
-                } catch (dumpErr) {
-                  console.error(
-                    "[SAFETY_NET] Failed to dump raw data:",
-                    dumpErr,
-                  );
-                }
-
-                // 0.1 IMMEDIATE RECOVERY (AUTO-INGEST via SQL)
-                // We use the SQL function that we PROVED works.
-                // This bypasses Edge Runtime complexity and potential RLS issues.
-                try {
-                  console.log("[RECOVERY] Triggering SQL Recovery Function...");
-                  const { data: rpcData, error: rpcError } = await supabase
-                    .rpc("recover_latest_radar_dump");
-
-                  if (rpcError) {
-                    console.error("[RECOVERY] RPC Failed:", rpcError);
-                    await supabase.from("radar_catch_all").insert({
-                      project_id: projectId,
-                      error_log: `RPC_FAIL: ${JSON.stringify(rpcError)}`,
-                    });
-                  } else {
-                    console.log(`[RECOVERY] RPC Success: ${rpcData}`);
-                  }
-                } catch (recErr) {
-                  console.error("[RECOVERY] Logic Error:", recErr);
-                }
-
-                // 1. LOG RAW RESPONSE AS REQUESTED
-                await logToDB(
-                  `AGENT_COMPLETE_${jobId}`,
-                  JSON.stringify(statusData, null, 2),
-                );
-                console.log(
-                  `[AGENT] Job ${jobId} COMPLETED. RAW PAYLOAD DUMP:`,
-                  JSON.stringify(statusData),
-                );
-
-                // DEBUG: Inspect structure
-                if (statusData.data) {
-                  console.log(
-                    "[DEBUG] statusData.data Keys:",
-                    Object.keys(statusData.data),
-                  );
-                  if (typeof statusData.data === "object") {
-                    console.log(
-                      "[DEBUG] statusData.data Sample:",
-                      JSON.stringify(statusData.data).substring(0, 200),
-                    );
-                  }
-                }
-
-                let candidates: any[] = [];
-                // SIMPLIFIED PARSING LOGIC (v2.2)
-
-                // 1. Direct Array Check (Firecrawl often returns { data: [...] })
-                if (statusData.data && Array.isArray(statusData.data)) {
-                  console.log("✅ PARSING: Found 'data' array.");
-                  candidates = statusData.data;
-                } // 2. Prospects/Companies Keys (Legacy/Alternative)
-                else if (
-                  statusData.data && statusData.data.prospects &&
-                  Array.isArray(statusData.data.prospects)
-                ) {
-                  candidates = statusData.data.prospects;
-                } else if (
-                  statusData.data && statusData.data.companies &&
-                  Array.isArray(statusData.data.companies)
-                ) {
-                  candidates = statusData.data.companies;
-                } // 3. Root Level Checks (Fallback)
-                else if (
-                  statusData.prospects && Array.isArray(statusData.prospects)
-                ) {
-                  candidates = statusData.prospects;
-                } else if (
-                  statusData.companies && Array.isArray(statusData.companies)
-                ) {
-                  candidates = statusData.companies;
-                } // 4. Raw Array (Rare)
-                else if (Array.isArray(statusData)) {
-                  candidates = statusData;
-                }
-
-                // Set d for text fallback if needed
-                const d = statusData.data || statusData;
-
-                // Strategy B: Text Fallback (Markdown JSON)
-                if (candidates.length === 0 && d) {
-                  let text = "";
-                  // 1. Cas simple : Propriété directe
-                  if (d.markdown) text = d.markdown;
-                  else if (d.text) text = d.text;
-                  // 2. Cas "Tableau" (Souvent Firecrawl renvoie data: [{ markdown: ... }])
-                  else if (Array.isArray(d) && d[0]?.markdown) {
-                    text = d.map((i: any) => i.markdown).join("\n\n");
-                  } // 3. Cas "Imbriqué"
-                  else if (d.data?.markdown) text = d.data.markdown;
-                  // 4. Fallback ultime : Stringify
-                  else text = typeof d === "string" ? d : JSON.stringify(d);
-
-                  // 🧹 CLEANING UTILS (CRITICAL FIX)
-                  const cleanText = text.replace(/```json/g, "").replace(
-                    /```/g,
-                    "",
-                  ).trim();
-
-                  // DEBUG: Log Raw Output before parsing
-                  console.log(
-                    "RAW FIRECRAWL OUTPUT (Cleaned):",
-                    cleanText.substring(0, 500) + "...",
-                  );
-
-                  try {
-                    const parsed = JSON.parse(cleanText);
-
-                    // 1. Check for { companies: [...] } (New Prompt Structure)
-                    if (parsed.companies && Array.isArray(parsed.companies)) {
-                      console.log(
-                        `[PARSER] Found 'companies' key with ${parsed.companies.length} items.`,
-                      );
-                      candidates = parsed.companies;
-                    } // 2. Check for direct array
-                    else if (Array.isArray(parsed)) {
-                      console.log(
-                        `[PARSER] Found direct array with ${parsed.length} items.`,
-                      );
-                      candidates = parsed;
-                    } // 3. Check for 'candidates' or 'prospects'
-                    else if (
-                      parsed.candidates && Array.isArray(parsed.candidates)
-                    ) {
-                      candidates = parsed.candidates;
-                    } else if (
-                      parsed.prospects && Array.isArray(parsed.prospects)
-                    ) {
-                      candidates = parsed.prospects;
-                    }
-                  } catch (e) {
-                    console.warn(
-                      "[PARSER] JSON Parse failed on direct text. Falling back to Gemini Extraction.",
-                      e,
-                    );
-                  }
-
-                  if (candidates.length > 0) {
-                    console.log(
-                      `[PARSER] SUCCESSFULLY EXTRACTED ${candidates.length} CANDIDATES FROM TEXT.`,
-                    );
-                    // Map to rawCandidates immediately to avoid breaking the flow
-                    for (const c of candidates) {
-                      // RELAXED MAPPING DUPLICATED HERE FOR SAFETY
-                      let finalUrl = c.url || c.website || c.URL ||
-                        "http://unknown.com";
-                      const finalName = c.company_name || c.name ||
-                        c["Company Name"] || "Unknown";
-                      if (
-                        finalUrl !== "http://unknown.com" &&
-                        !finalUrl.startsWith("http")
-                      ) finalUrl = `https://${finalUrl}`;
-
-                      const normalizedUrl = normalizeUrlForDedup(finalUrl);
-                      if (!existingUrls.has(normalizedUrl)) {
-                        rawCandidates.push({
-                          url: finalUrl,
-                          source_query: missionBrief,
-                          company_name: finalName,
-                          logo_url: "",
-                          status: "analyzed",
-                          is_agent_verified: true,
-                          match_reason: c.match_reason ||
-                            c.reason_for_matching || c.context ||
-                            "Identified by Agent",
-                          activity: c.activity || c.description,
-                        });
-                        existingUrls.add(normalizedUrl);
-                        console.log(`[DEDUP] Added New Candidate: ${finalUrl}`);
-                      } else {
-                        console.log(`[DEDUP] Skipped Duplicate: ${finalUrl}`);
-                      }
-                    }
-                    break; // Mission Saved via Direct Parse
-                  }
-
-                  // NEW: BRAIN DRAIN STRATEGY (GEMINI EXTRACTION) if clean parse failed
-                  console.log(
-                    "[AGENT] Structured Parse Failed. Activating BRAIN DRAIN (Gemini Extraction)...",
-                  );
-                  const extracted = await extractCandidatesFromRawOutput(
-                    text,
-                    gemini,
-                    missionBrief,
-                  );
-
-                  if (extracted.length > 0) {
-                    console.log(
-                      `[AGENT] BRAIN DRAIN SUCCESS. Recovered ${extracted.length} candidates.`,
-                    );
-                    rawCandidates.push(...extracted);
-                    // Add to existingUrls to prevent dupes in same batch
-                    extracted.forEach((c) => {
-                      const nUrl = normalizeUrlForDedup(c.url);
-                      if (!existingUrls.has(nUrl)) {
-                        existingUrls.add(nUrl);
-                      }
-                    });
-                    break; // Mission Saved
-                  }
-                }
-
-                if (candidates.length === 0) {
-                  await logToDB(
-                    `PARSE_FAIL_${jobId}`,
-                    "No candidates found after parsing strategies A, B and Brain Drain.",
-                  );
-                  console.error(
-                    "[AGENT] CRITICAL: NO CANDIDATES FOUND even after Brain Drain.",
-                  );
-                  break;
-                }
-
-                console.log(
-                  `[AGENT] PARSING SUCCESS. Extracted ${candidates.length} candidates.`,
-                );
-
-                for (const c of candidates) {
-                  // RELAXED MAPPING: Accept whatever the Agent gives us
-                  // Handle Capitalized Keys from Agent (e.g. "URL", "Company Name")
-                  let finalUrl = c.url || c.website || c.URL ||
-                    "http://unknown.com";
-                  const finalName = c.company_name || c.name ||
-                    c["Company Name"] ||
-                    "Unknown Company";
-
-                  // Fix obvious URL issues without being draconian
-                  if (
-                    finalUrl !== "http://unknown.com" &&
-                    !finalUrl.startsWith("http")
-                  ) {
-                    finalUrl = `https://${finalUrl}`;
-                  }
-
-                  const normalizedUrl = normalizeUrlForDedup(finalUrl);
-                  if (existingUrls.has(normalizedUrl)) {
-                    console.log(`[DEDUP] Skipped Duplicate: ${finalUrl}`);
-                    continue;
-                  }
-
-                  rawCandidates.push({
-                    url: finalUrl,
-                    source_query: missionBrief,
-                    company_name: finalName,
-                    logo_url: "",
-                    status: "analyzed", // DIRECTLY MARK AS ANALYZED (TRUST THE AGENT)
-                    is_agent_verified: true,
-                    // Store extra metadata from Agent if available
-                    match_reason: c.match_reason || c.reason_for_matching ||
-                      c.context || "Identified by Agent",
-                    activity: c.activity || c.description,
-                  });
-                  existingUrls.add(normalizedUrl);
-                  console.log(`[DEDUP] Added New Candidate: ${finalUrl}`);
-                }
-                break; // Mission Complete
-              }
-
-              if (statusData.status === "failed") {
-                console.error(
-                  `[AGENT] Job ${jobId} FAILED: ${statusData.error}`,
-                );
+            while (!jobDone && Date.now() - pollStart < POLL_MAX_MS) {
+              if (controller.signal.aborted) {
                 break;
               }
-              pollAttempts++;
-            } // End While Loop
+
+              await new Promise((r) =>
+                setTimeout(r, POLL_INTERVAL_MS)
+              );
+              pollCount++;
+
+              // Update UX progress bar
+              const prog = Math.min(10 + pollCount * 4, 85);
+              await updateScanStatus("searching", prog);
+
+              try {
+                const statusResp = await fetch(
+                  `https://api.firecrawl.dev/v2/agent/${jobId}`,
+                  {
+                    headers: {
+                      "Authorization": `Bearer ${firecrawlKey}`,
+                    },
+                    signal: controller.signal,
+                  },
+                );
+                if (!statusResp.ok) {
+                  console.warn(
+                    `[POLL] Non-OK status from Firecrawl for job ${jobId}: ${statusResp.status}`,
+                  );
+                  continue;
+                }
+
+                const statusData = await statusResp.json();
+                console.log(
+                  `[POLL] Job ${jobId} status: ${statusData.status} (t+${
+                    pollCount * 15
+                  }s)`,
+                );
+
+                if (statusData.status === "completed") {
+                  jobDone = true;
+                  await logToDB(
+                    "FIRECRAWL_DONE",
+                    `Job ${jobId} completed after ${pollCount * 15}s`,
+                  );
+
+                  // ── Parse the raw output ──────────────────────────────────
+                  const rawOutput = statusData.data;
+                  let jsonStr = typeof rawOutput === "object"
+                    ? JSON.stringify(rawOutput)
+                    : String(rawOutput || "");
+                  jsonStr = jsonStr
+                    .replace(/```json\s*/gi, "")
+                    .replace(/```\s*/g, "")
+                    .trim();
+
+                  let candidates: {
+                    company_name?: string;
+                    name?: string;
+                    url?: string;
+                    website?: string;
+                    website_url?: string;
+                    activity?: string;
+                    industry?: string;
+                    sector?: string;
+                    relevance_reason?: string;
+                    reason_for_selection?: string;
+                    [key: string]: unknown;
+                  }[] = [];
+
+                  try {
+                    let parsed: unknown = null;
+                    try {
+                      parsed = JSON.parse(jsonStr);
+                    } catch {
+                      const arr = jsonStr.match(/\[[\s\S]*\]/);
+                      if (arr) {
+                        parsed = JSON.parse(arr[0]);
+                      } else {
+                        const obj = jsonStr.match(/\{[\s\S]*\}/);
+                        if (obj) parsed = JSON.parse(obj[0]);
+                      }
+                    }
+
+                    if (parsed !== null && typeof parsed === "object") {
+                      const p = parsed as Record<string, unknown>;
+                      if (p.companies && Array.isArray(p.companies)) {
+                        candidates = p.companies;
+                      } else if (p.data && Array.isArray(p.data)) {
+                        candidates = p.data;
+                      } else if (Array.isArray(parsed)) {
+                        candidates = parsed;
+                      }
+                    }
+                  } catch (pe) {
+                    await logToDB("PARSE_ERROR", String(pe));
+                  }
+
+                  console.log(
+                    `[POLL] Parsed ${candidates.length} candidates from job ${jobId}`,
+                  );
+
+                  // ── Insert into radar_catch_all ───────────────────────────
+                  let inserted = 0;
+                  for (const c of candidates) {
+                    const companyName = c.company_name || c.name || "";
+                    let websiteUrl = c.url || c.website || c.website_url || "";
+                    if (!websiteUrl) continue;
+                    if (!String(websiteUrl).startsWith("http")) {
+                      websiteUrl = `https://${websiteUrl}`;
+                    }
+
+                    const { error: upsertErr } = await supabase
+                      .from("radar_catch_all")
+                      .upsert({
+                        project_id: projectId,
+                        company_name: companyName || websiteUrl,
+                        website_url: websiteUrl,
+                        activity_sector: c.activity || c.industry ||
+                          c.sector || null,
+                        pain_point_context: c.relevance_reason ||
+                          c.reason_for_selection || null,
+                        status: "new",
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                        raw_data: {
+                          source: "firecrawl_poll_v2",
+                          query: missionBrief,
+                          raw: c,
+                        },
+                      }, {
+                        onConflict: "project_id,website_url",
+                        ignoreDuplicates: false,
+                      });
+
+                    if (!upsertErr) {
+                      inserted++;
+                      console.log(`[POLL] ✅ Inserted: ${companyName}`);
+                    } else {
+                      console.error(
+                        `[POLL] ❌ Upsert error (${companyName}):`,
+                        upsertErr.message,
+                      );
+                    }
+                  }
+
+                  await logToDB(
+                    "INSERT_DONE",
+                    `Inserted ${inserted}/${candidates.length} companies into radar_catch_all`,
+                  );
+                  allScanCandidates.push(...candidates.map((c) => ({
+                    url: String(c.url || c.website || c.website_url || ""),
+                    source_query: missionBrief,
+                    company_name: String(c.company_name || c.name || ""),
+                    logo_url: "",
+                    status: "new" as const,
+                    relevance_reason: c.relevance_reason as string | undefined,
+                    reason_for_selection: c.reason_for_selection as
+                      | string
+                      | undefined,
+                  })));
+                } else if (statusData.status === "failed") {
+                  jobDone = true;
+                  await logToDB(
+                    "FIRECRAWL_FAILED",
+                    `Job ${jobId} failed: ${statusData.error || "Unknown"}`,
+                  );
+                }
+              } catch (pollErr) {
+                if ((pollErr as Error)?.name === "AbortError") break;
+                console.error(
+                  `[POLL] Error polling job ${jobId}:`,
+                  pollErr,
+                );
+              }
+            }
+
+            if (!jobDone) {
+              await logToDB(
+                "POLL_TIMEOUT",
+                `Job ${jobId} did not complete within ${
+                  POLL_MAX_MS / 60000
+                } min`,
+              );
+            }
+
+            console.log(`[AGENT] ⏱️ Polling complete for job ${jobId}.`);
           } catch (e) {
-            console.error("Process error in loop", e);
-            await logToDB("LOOP_CRASH", String(e));
+            console.error(`[AGENT] Mission Error:`, e);
           }
-        }
+        } // End of approved_queries loop
 
-        console.log(
-          `[BACKGROUND] Found ${rawCandidates.length} candidates.`,
-        );
-
-        // DIRECT INSERTION (SKIP SECONDARY VALIDATION)
-        // The user trusts the Agent's filtering. We insert directly.
-
-        if (rawCandidates.length > 0) {
-          const batchResults = rawCandidates.map((c) => ({
-            project_id: projectId,
-            user_id: userId,
-            company_name: c.company_name,
-            company_url: c.url,
-            logo_url: c.logo_url,
-            match_score: 95, // FORCE HIGH SCORE to ensure visibility
-            match_explanation: `[AGENT VERIFIED] ${c.match_reason}`,
-            strategic_category: "PERFECT_MATCH", // Trust the matrix fit
-            analysis_status: "analyzed", // Ready for display
-            created_at: new Date().toISOString(),
+        // 3. LA FERMETURE OBLIGATOIRE (Le "Kill Switch")
+        console.log("🏁 FIN DU PROCESSUS : Arrêt du spinner.");
+        await supabase
+          .from("radar_scans") // CHANGED from project_scans to radar_scans
+          .update({
+            status: "completed",
+            progress: 100,
             updated_at: new Date().toISOString(),
-            sales_thesis: `Agent Context: ${c.match_reason}\nActivity: ${
-              c.activity || "N/A"
-            }`,
-            trigger_events: [],
-            detected_pain_points: [],
-            strategic_analysis:
-              `Identified via Agent Deep Research. Activity: ${
-                c.activity || "N/A"
-              }`,
-            location: "Unknown",
-            custom_hook: JSON.stringify({
-              source: "agent_v2_direct",
-              original_activity: c.activity,
-            }),
-          }));
-
-          console.log(
-            `[BACKGROUND] Performing DIRECT BATCH UPSERT of ${batchResults.length} records...`,
-          );
-          const { error: batchErr } = await supabase.from("company_analyses")
-            .upsert(
-              batchResults,
-              { onConflict: "project_id, company_url" },
-            );
-
-          if (batchErr) {
-            console.error("[BACKGROUND] Upsert error:", batchErr);
-            await logToDB("UPSERT_FAIL", JSON.stringify(batchErr));
-          }
-          if (batchErr) {
-            console.error("[BACKGROUND] Batch Upsert Failed:", batchErr);
-            await logToDB("UPSERT_FAIL", JSON.stringify(batchErr));
-          } else {
-            console.log("[BACKGROUND] Batch Upsert SUCCESS.");
-            await logToDB(
-              "UPSERT_SUCCESS",
-              `Inserted ${batchResults.length} records.`,
-            );
-          }
-        } else {
-          await logToDB(
-            "NO_CANDIDATES_TO_INSERT",
-            "rawCandidates array was empty.",
-          );
-        }
-
-        console.log("[BACKGROUND] Batch Process Done via FAST TRACK");
-      } catch (err) {
-        // CATCH-ALL LOGGER
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const errStack = err instanceof Error ? err.stack : "";
-        await logToDB("CRITICAL_CRASH", `${errMsg}\n${errStack}`);
-        console.error("[BACKGROUND] CRITICAL ERROR:", err);
+            meta: {
+              total_candidates: allScanCandidates.length,
+              message: "Scan completed via Ultra-Robust Block",
+            },
+          })
+          .eq("id", scanId);
+      } catch (globalError) {
+        console.error("🔥 CRASH CRITIQUE DU SCAN :", globalError);
+        await supabase.from("radar_scans").update({
+          status: "failed",
+          meta: { error: String(globalError) },
+        }).eq("id", scanId);
       } finally {
-        clearTimeout(timeoutId);
+        // Double security
+        // console.log("Final cleanup (if needed)");
       }
     };
 

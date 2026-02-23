@@ -37,6 +37,7 @@ import { AutoSaveIndicator } from "@/components/ui/auto-save-indicator";
 import { supabase } from "@/integrations/supabase/client";
 import { useCompanyDocuments } from "@/hooks/useCompanyDocuments";
 import { useLocalAutoSave } from "@/hooks/useLocalAutoSave";
+import { read, utils } from "xlsx";
 import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -265,6 +266,22 @@ export default function AgencyBrain() {
     }
     return fullText;
   };
+
+  const extractExcelText = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = read(arrayBuffer);
+    let fullText = "";
+
+    // Iterate over all sheets
+    workbook.SheetNames.forEach((sheetName) => {
+      const sheet = workbook.Sheets[sheetName];
+      // Convert sheet to CSV text
+      const sheetText = utils.sheet_to_csv(sheet);
+      fullText += `--- Sheet: ${sheetName} ---\n${sheetText}\n\n`;
+    });
+
+    return fullText;
+  };
   const handleFileUpload = useCallback(async (files: FileList | null) => {
     if (!files) return;
     for (let i = 0; i < files.length; i++) {
@@ -283,6 +300,16 @@ export default function AgencyBrain() {
           let content = "";
           if (file.type === "application/pdf") {
             content = await extractPdfText(file);
+          } else if (
+            file.type === "text/csv" ||
+            file.type === "application/vnd.ms-excel" ||
+            file.type ===
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+            file.name.endsWith(".csv") ||
+            file.name.endsWith(".xlsx") ||
+            file.name.endsWith(".xls")
+          ) {
+            content = await extractExcelText(file);
           } else {
             content = await file.text();
           }
@@ -403,6 +430,7 @@ export default function AgencyBrain() {
             body: {
               websiteUrl: websiteUrl || agencyDNA.websiteUrl,
               existingContent: websiteContent,
+              documentsContent, // NEW: Pass parsed Excel/PDF data
             },
           },
         );

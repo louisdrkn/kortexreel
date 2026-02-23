@@ -14,6 +14,7 @@ import {
   Sparkles,
   Target,
   Trash2,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { CompanyGrid } from "./CompanyGrid";
-import { CompanyDetailSheet } from "./CompanyDetailSheet";
+import { CompanyDetailPage } from "./CompanyDetailPage";
 import { RecalibrateButton } from "./RecalibrateButton";
 import { useRadar } from "./hooks/useRadar";
 import { useNeuralLoop } from "./hooks/useNeuralLoop";
@@ -73,6 +74,7 @@ export function RadarLayout() {
     analyzeMarket,
     isStrategizing,
     isExecuting,
+    cancelScan,
     forceReloadRadar, // NEW: Force Reset
   } = useRadar();
 
@@ -293,6 +295,18 @@ export function RadarLayout() {
 
               {/* Actions */}
               <div className="flex items-center gap-2">
+                {/* CANCEL SCAN BUTTON — visible only during active scan */}
+                {(isExecuting || isStrategizing) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 h-8 border-red-900/60 bg-red-950/30 text-red-400 hover:bg-red-900/40 hover:text-red-300 hover:border-red-700 text-xs font-mono uppercase animate-pulse"
+                    onClick={cancelScan}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    <span>Annuler</span>
+                  </Button>
+                )}
                 <RecalibrateButton
                   onRecalibrate={handleRecalibrate}
                   isRecalibrating={isRecalibrating}
@@ -544,14 +558,14 @@ export function RadarLayout() {
         )}
       </AnimatePresence>
 
-      {/* Company Detail Sheet */}
-      <CompanyDetailSheet
+      {/* Company Detail Page (full screen) */}
+      <CompanyDetailPage
         company={selectedCompany}
         isOpen={isSheetOpen}
         onClose={handleCloseSheet}
         onAnalyze={analyzeCompany}
         onFindDecisionMaker={findDecisionMaker}
-        isAnalyzing={!!analyzingCompanyId} // Pass boolean if needed, or update prop
+        isAnalyzing={!!analyzingCompanyId}
         isFindingDecisionMaker={isFindingDecisionMaker}
       />
 
